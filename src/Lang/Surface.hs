@@ -91,8 +91,8 @@ type MaybeAnnotatedX a = Maybe (SchemeX a)
 
 -- | Let绑定
 data LetBindingX a
-  = LetBinding        (LetBindingFormX a) (ExpressionX a) -- ^ 绑定
-  | BindingAnnotation (AnnotationX a)                     -- ^ 类型注解
+  = LetBinding        LetBindingForm (ExpressionX a) -- ^ 绑定
+  | BindingAnnotation (AnnotationX a)                -- ^ 类型注解
   deriving (Show, Eq)
 
 -- | 对某个名字的注解
@@ -101,7 +101,7 @@ data AnnotationX a
   deriving (Show, Eq)
 
 -- | Let绑定的形式
-data LetBindingFormX a
+data LetBindingForm
   = PatternBinding    Pattern         -- ^ 绑定某个pattern
   | CombinatorBinding Name [Pattern]  -- ^ 组合子定义
   deriving (Show, Eq)
@@ -113,8 +113,8 @@ data CaseAlternativeX a
 
 -- | do-记法中的绑定
 data DoStmtX a
-  = DoBind          (Maybe Pattern)     (ExpressionX a) -- ^ pattern <- expr
-  | DoLetBinding    (LetBindingFormX a) (ExpressionX a) -- ^ let ... = expr
+  = DoBind          (Maybe Pattern) (ExpressionX a) -- ^ pattern <- expr
+  | DoLetBinding    LetBindingForm  (ExpressionX a) -- ^ let ... = expr
   deriving (Show, Eq)
 
 -- }}}
@@ -224,7 +224,6 @@ type Expression       = ExpressionX      ()
 type Annotation       = AnnotationX      ()
 type MaybeAnnotated   = MaybeAnnotatedX  ()
 type LetBinding       = LetBindingX      ()
-type LetBindingForm   = LetBindingFormX  ()
 type CaseAlternative  = CaseAlternativeX ()
 type DoStmt           = DoStmtX          ()
 type ToplevelDef      = ToplevelDefX     ()
@@ -245,7 +244,6 @@ type ExpressionK      = ExpressionX      Kind
 type AnnotationK      = AnnotationX      Kind
 type MaybeAnnotatedK  = MaybeAnnotatedX  Kind
 type LetBindingK      = LetBindingX      Kind
-type LetBindingFormK  = LetBindingFormX  Kind
 type CaseAlternativeK = CaseAlternativeX Kind
 type DoStmtK          = DoStmtX          Kind
 type CombinatorDefK   = CombinatorDefX   Kind

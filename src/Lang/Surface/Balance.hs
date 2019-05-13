@@ -40,6 +40,7 @@ balance' db x = r x
       | checkAssoc db α β == AShouldRotate = EBinary Nothing β a $ r $ EBinary Nothing α b c
     r' e = e
 
+-- | 去除EIndir和EQuoted
 simplify :: ExpressionX a -> ExpressionX a
 simplify (EIndir x)            = simplify x
 simplify (EQuoted ann x)       = mapAnnot (const ann) $ simplify x
@@ -61,3 +62,4 @@ balance :: [InfixDef] -> ExpressionX a -> ExpressionX a
 balance ids = simplify . balance' (translateDB ids)
   where translateDB                          = fmap translate
         translate (InfixDef name prec assoc) = (name, (assoc, prec))
+
