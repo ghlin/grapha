@@ -50,13 +50,13 @@ typing :: P Type
 typing = foldl1 fn <$> termT `sepBy1` symbol "->"
 
 fn :: Type -> Type -> Type
-fn t1 t2 = TApp () (TApp () (TCon () "->") t1) t2
+fn t1 t2 = TApp (TApp (TCon "->") t1) t2
 
 varT :: P Type
-varT = TVar () <$> identV
+varT = TVar <$> identV
 
 conT :: P Type
-conT = TCon () <$> identT
+conT = TCon <$> identT
 
 tupleCon :: Int -> String
 tupleCon n = "(" ++ replicate (n - 1) ',' ++ ")"
@@ -65,16 +65,16 @@ tupleT :: P Type
 tupleT = do
   ts <- parens $ typing `sepBy` comma
   case ts of
-    []  -> return $ TCon () "()"
+    []  -> return $ TCon "()"
     [_] -> fail "quote"
-    _   -> return $ foldl1 (TApp ()) $ (TCon () $ tupleCon $ length ts):ts
+    _   -> return $ foldl1 TApp $ (TCon $ tupleCon $ length ts):ts
 
 listT :: P Type
-listT = TApp () (TCon () "[]") <$> brackets typing
+listT = TApp (TCon "[]") <$> brackets typing
 
 termT :: P Type
 termT = listT <|> ((varT <|> conT) >>= probe) <|> try tupleT <|> parens typing
-  where probe t1 = fallback' t1 $ TApp () t1 <$> termT
+  where probe t1 = fallback' t1 $ TApp t1 <$> termT
 
 
 -- | Qual
@@ -124,14 +124,6 @@ conP = PCon <$> identT <*> many pattern
 termP :: P Pattern
 termP = litP <|> varP <|> conP <|> wildcardP <|> listP <|> try tupleP <|> parens pattern
 
--- | `of type` assertion
-ofTypeAssertion :: P Scheme
-ofTypeAssertion = colon >> Forall [] <$> qual
-
--- | `<symbol> : <type>` assertion
-annotation :: P Annotation
-annotation = Annotation <$> identV <*> ofTypeAssertion
-
 -- }}}
 
 -- {{{ expression....
@@ -141,20 +133,20 @@ expr :: P Expression
 expr = ifE <|> doE <|> try letE <|> caseE <|> lamE <|> expr'
 
 litE :: P Expression
-litE = ELit Nothing <$> literal
+litE = ELit <$> literal
 
 varE :: P Expression
-varE = EVar Nothing <$> (identV <|> identT)
+varE = EVar <$> (identV <|> identT)
 
 lamE :: P Expression
-lamE = ELam Nothing <$> (backslash *> some pattern)
-                    <*> (arrowR    *> expr)
+lamE = ELam <$> (backslash *> some pattern)
+            <*> (arrowR    *> expr)
 
 ifE :: P Expression
 ifE = do
   c <- symbol "if" *> expr
   (t, e) <- try compact <|> laidout
-  return $ EIf Nothing c t e
+  return $ EIf c t e
   where compact = (,) <$> (symbol "then" *> expr) <*> (symbol "else" *> expr)
         laidout = aligned $ \ref -> do
           c <- indented ref $ symbol "then" *> expr <* scn
@@ -165,7 +157,7 @@ caseE :: P Expression
 caseE = do
   exam <- symbol "case" *> expr <* symbol "of"
   alts <- try compact <|> laidout
-  return $ ECase Nothing exam alts
+  return $ ECase exam alts
   where compact = caseAltE `sepBy1` semi
         laidout = someAligned caseAltE
 
@@ -196,7 +188,7 @@ combinatorBindingFormB :: P LetBindingForm
 combinatorBindingFormB = CombinatorBinding <$> identV <*> many pattern
 
 doE :: P Expression
-doE = EDo Nothing <$> (symbol "do" *> someAligned doStmtS)
+doE = EDo <$> (symbol "do" *> someAligned doStmtS)
 
 doLetS :: P DoStmt
 doLetS = symbol "let" *> (DoLetBinding <$> letBindingFormB <*> (equalsign *> expr))
@@ -209,31 +201,27 @@ doStmtS :: P DoStmt
 doStmtS = doLetS <|> doBindS
 
 listLiteralE :: P Expression
-listLiteralE = EListLiteral Nothing <$> brackets (expr `sepBy` comma)
+listLiteralE = EListLiteral <$> brackets (expr `sepBy` comma)
 
 tupleLiteralE :: P Expression
 tupleLiteralE = do
   es <- parens $ expr `sepBy` comma
   when (length es == 1) $ fail "quotation"
-  return $ ETupleLiteral Nothing es
+  return $ ETupleLiteral es
 
 termE :: P Expression
-termE = termE' >>= probe
+termE = termE' >>= probeApp
   where
-    probe = probeApp probe >=> probeAnnot probe
-    probeApp p e1 = fallback' e1 $ do
+    probeApp e1 = fallback' e1 $ do
       e2 <- termE'
-      p $ EApp Nothing e1 e2
-    probeAnnot p e = fallback' e $ do
-      annot <- ofTypeAssertion
-      p $ putAnnot annot e
+      probeApp $ EApp e1 e2
 
 termE' :: P Expression
 termE' = litE
      <|> try varE
      <|> try tupleLiteralE
      <|> listLiteralE
-     <|> EQuoted Nothing <$> parens expr -- TODO: prefix operator
+     <|> EQuoted <$> parens expr -- TODO: prefix operator
 
 infixOpE :: P Name
 infixOpE = identO <|> infixFnE
@@ -249,10 +237,10 @@ expr' = do
     rs <- many $ try $ (,) <$> termE <*> infixOpE
     el <- expr
     return $ rotate $ build el $ (e1, o1):rs
-      where build el ps                              = foldr mk el ps
-            mk (l, o) r                              = EBinary Nothing o l r
-            rotate (EBinary _ α a (EBinary _ β b c)) = rotate $ EBinary Nothing β (EBinary Nothing α a b) c
-            rotate x                                 = x
+      where build el ps                          = foldr mk el ps
+            mk (l, o) r                          = EBinary o l r
+            rotate (EBinary α a (EBinary β b c)) = rotate $ EBinary β (EBinary α a b) c
+            rotate x                             = x
 
 -- }}}
 
@@ -300,8 +288,8 @@ combinatorDef = CombinatorDef <$> combinatorNameC
                               <*> (many pattern <* equalsign)
                               <*> expr
 
-argsD :: P [(Name, ())]
-argsD = fmap (,()) <$> many identV
+argsD :: P [Name]
+argsD = many identV
 
 -- | combinator annotation
 -- main : IO ()
@@ -333,7 +321,7 @@ interfaceDef = do
   (preds, name, arg) <- try full <|> simple
   members <- aligned $ \ref ->
     combinatorAnnot `sepBy1` try (scn *> indented ref (return ()))
-  return $ InterfaceDef name preds (arg, ()) members
+  return $ InterfaceDef name preds arg members
   where full = (,,) <$> predsQ <* fatArrowR <*> identT <*> identV
         simple = ([],,) <$> identT <*> identV
 
@@ -347,6 +335,14 @@ instanceDef = do
   return $ InstanceDef name preds ty members
   where full   = (,,) <$> predsQ <* fatArrowR <*> identT <*> typing
         simple = ([],,) <$> identT <*> typing
+
+-- | `of type` assertion
+ofTypeAssertion :: P (Qual Type)
+ofTypeAssertion = colon >> qual
+
+-- | `<symbol> : <type>` assertion
+annotation :: P Annotation
+annotation = Annotation <$> identV <*> ofTypeAssertion
 
 -- }}}
 
