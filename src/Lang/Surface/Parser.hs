@@ -12,7 +12,7 @@ import qualified Text.Megaparsec.Char.Lexer    as L
 
 import           Lang.Surface
 import           ParserHelper                  as H
-import           Misc                           ( singleton, Name )
+import           Misc                           ( singleton, Name, tupleCon )
 
 -- {{{
 
@@ -20,14 +20,13 @@ parser :: P Program
 parser = organize <$> (between scn eof $ many $ lexemeN toplevel)
   where organize = foldl pick prog
         prog = Program [] [] [] [] [] [] []
-        pick p (ToplevelInterfaceDef    d) = p { interfaceDefs    = d:interfaceDefs    p }
-        pick p (ToplevelInstanceDef     d) = p { instanceDefs     = d:instanceDefs     p }
-        pick p (ToplevelCombinatorDef   d) = p { combinatorDefs   = d:combinatorDefs   p }
-        pick p (ToplevelCombinatorAnnot d) = p { combinatorAnnots = d:combinatorAnnots p }
-        pick p (ToplevelAliasDef        d) = p { aliasDefs        = d:aliasDefs        p }
-        pick p (ToplevelDataTypeDef     d) = p { dataTypeDefs     = d:dataTypeDefs     p }
-        pick p (ToplevelInfixDef        d) = p { infixDefs        = d:infixDefs        p }
-
+        pick p (ToplevelInterfaceDef    d) = p { interfaceDefs    = interfaceDefs    p <> [d] }
+        pick p (ToplevelInstanceDef     d) = p { instanceDefs     = instanceDefs     p <> [d] }
+        pick p (ToplevelCombinatorDef   d) = p { combinatorDefs   = combinatorDefs   p <> [d] }
+        pick p (ToplevelCombinatorAnnot d) = p { combinatorAnnots = combinatorAnnots p <> [d] }
+        pick p (ToplevelAliasDef        d) = p { aliasDefs        = aliasDefs        p <> [d] }
+        pick p (ToplevelDataTypeDef     d) = p { dataTypeDefs     = dataTypeDefs     p <> [d] }
+        pick p (ToplevelInfixDef        d) = p { infixDefs        = infixDefs        p <> [d] }
 -- }}}
 
 -- {{{ literal parsers
@@ -49,17 +48,11 @@ literal = LString  <$> lexeme H.string
 typing :: P Type
 typing = foldl1 fn <$> termT `sepBy1` symbol "->"
 
-fn :: Type -> Type -> Type
-fn t1 t2 = TApp (TApp (TCon "->") t1) t2
-
 varT :: P Type
 varT = TVar <$> identV
 
 conT :: P Type
 conT = TCon <$> identT
-
-tupleCon :: Int -> String
-tupleCon n = "(" ++ replicate (n - 1) ',' ++ ")"
 
 tupleT :: P Type
 tupleT = do
@@ -73,7 +66,7 @@ listT :: P Type
 listT = TApp (TCon "[]") <$> brackets typing
 
 termT :: P Type
-termT = listT <|> ((varT <|> conT) >>= probe) <|> try tupleT <|> parens typing
+termT = listT <|> ((varT <|> conT) >>= probe) <|> try tupleT <|> (parens typing >>= probe)
   where probe t1 = fallback' t1 $ TApp t1 <$> termT
 
 

@@ -217,5 +217,7 @@ instance HasExpression Program where
                     cds = mapE f <$> combinatorDefs prog
                  in prog { instanceDefs = ids, combinatorDefs = cds }
 
+fn :: Type -> Type -> Type
+fn t1 t2 = TApp (TApp (TCon "->") t1) t2
 
 -- }}}
