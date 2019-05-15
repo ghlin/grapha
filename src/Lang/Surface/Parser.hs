@@ -48,6 +48,10 @@ literal = LString  <$> lexeme H.string
 typing :: P Type
 typing = foldl1 fn <$> termT `sepBy1` symbol "->"
 
+-- | like typing, but doesn't probe type application
+typing' :: P Type
+typing' = foldl1 fn <$> termT' `sepBy1` symbol "->"
+
 varT :: P Type
 varT = TVar <$> identV
 
@@ -69,6 +73,8 @@ termT :: P Type
 termT = listT <|> ((varT <|> conT) >>= probe) <|> try tupleT <|> (parens typing >>= probe)
   where probe t1 = fallback' t1 $ TApp t1 <$> termT
 
+termT' :: P Type
+termT' = listT <|> (varT <|> conT) <|> try tupleT <|> parens typing
 
 -- | Qual
 qual :: P (Qual Type)
@@ -304,7 +310,7 @@ dataTypeDef = do
           productD `sepBy1` try (optional scn *> indented ref vertbar)
 
 productD :: P ProductDef
-productD = ProductDef <$> identT <*> many termT
+productD = ProductDef <$> identT <*> many termT'
 
 -- | interface [ <preds> => ] <name> <arg>
 --     <member-defs>
