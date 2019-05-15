@@ -1,8 +1,20 @@
+{-# LANGUAGE TupleSections #-}
 module Lang.Typing where
 
-import           Data.Maybe                     ( fromMaybe, isJust )
-import           Data.List                      ( union, intersect, nub )
-import           Control.Monad                  ( msum, mapM )
+import           Data.Maybe                     ( fromMaybe
+                                                , isJust
+                                                )
+import           Data.List                      ( union
+                                                , intersect
+                                                , nub
+                                                )
+import           Data.Char                      ( isLetter )
+import           Control.Monad                  ( msum
+                                                , mapM
+                                                )
+import           Control.Monad.Trans.Except    as E
+import           Control.Monad.Trans.State     as T
+import           Control.Monad.Trans.Class      ( lift )
 import qualified Lang.Surface                  as S
 import           Lang.Core
 import           Misc
@@ -56,6 +68,10 @@ instance Types Pred where
 instance Types t => Types (Qual t) where
   apply s (Qual ps t) = Qual (apply s ps) (apply s t)
   frees (Qual ps t)   = frees ps `union` frees t
+
+instance Types Sc where
+  apply s (Sc ks q) = Sc ks $ apply s q
+  frees (Sc _ q)    = frees q
 
 infixr 4 @@
 
@@ -182,4 +198,136 @@ addInst ps p@(Pred iface t) ce | not (defined iface ce) = fail "No class for ins
 
 overlap :: Pred -> Pred -> Bool
 overlap p q = isJust $ mguPred p q
+
+-- | lift to scheme
+quantify :: [TyVar] -> Qual Ty -> Sc
+quantify vs q = Sc ks (apply s q)
+  where vs' = [ v | v <- frees q, v `elem` vs]
+        ks  = kind <$> vs'
+        s   = zip vs' (TGen <$> [0..])
+
+toSc :: Ty -> Sc
+toSc = Sc [] . Qual []
+
+-- | Assumption, id -> ty
+data Assump = Assump Name Sc
+
+instance Types Assump where
+  apply s (Assump i sc) = Assump i $ apply s sc
+  frees (Assump _ sc)   = frees sc
+
+lookupAssump :: Monad m => Name -> [Assump] -> m Sc
+lookupAssump i [] = fail $ "Unbound identifier: " <> i
+lookupAssump i (Assump i' sc : as) | i == i'   = return sc
+                                   | otherwise = lookupAssump i as
+
+-- | for now...
+type TypingError = String
+
+data TypingState
+  = TypingState
+    { supply :: Int
+    , substs :: Subst
+    , symtab :: [(Name, Sc)] -- ^ 已知的符号的类型 TODO: 应该放在ReaderT内
+    }
+
+-- the type inference monad.
+type Typing a = E.ExceptT TypingError (T.State TypingState) a
+
+runTyping :: [(Name, Sc)] -> Typing a -> Either TypingError a
+runTyping sc = flip T.evalState (initialState sc) . E.runExceptT
+
+initialState :: [(Name, Sc)] -> TypingState
+initialState cs = TypingState 0 empty cs
+
+lookupSymSc :: Name -> Typing Sc
+lookupSymSc i = do vcs <- lift $ T.gets symtab
+                   case lookup i vcs of
+                     Just sc -> return sc
+                     Nothing -> E.throwE $ "Invalid SymSc: " <> i
+
+getSubst :: Typing Subst
+getSubst = lift $ T.gets substs
+
+extendSubst :: Subst -> Typing ()
+extendSubst s = lift $ T.modify $ \env -> env { substs = s @@ substs env }
+
+unify :: Ty -> Ty -> Typing ()
+unify t1 t2 = do s <- getSubst
+                 u <- mgu (apply s t1) (apply s t2)
+                 extendSubst u
+
+newTVar :: Kind -> Typing Ty
+newTVar k = do
+  i <- (+1) <$> lift (T.gets supply)
+  let name = "ty_" <> show i
+  lift $ T.modify $ \env -> env { supply = i }
+  return $ TVar $ TyVar name k
+
+instSc :: Sc -> Typing (Qual Ty)
+instSc (Sc ks q) = flip instantiate q <$> mapM newTVar ks
+-- where instantiate is defined as:
+
+class Instantiate t where
+  instantiate :: [Ty] -> t -> t
+
+instance Instantiate Ty where
+  instantiate ts (TApp l r) = TApp (instantiate ts l) (instantiate ts r)
+  instantiate ts (TGen n)   = ts !! n
+  instantiate _  t          = t
+
+instance Instantiate t => Instantiate [t] where
+  instantiate = fmap . instantiate
+
+instance Instantiate Pred where
+  instantiate ts (Pred i t) = Pred i $ instantiate ts t
+
+instance Instantiate t => Instantiate (Qual t) where
+  instantiate ts (Qual ps t) = instantiate ts ps `Qual` instantiate ts t
+
+-- | infer literals
+inferL :: S.Literal -> Typing ([Pred], Ty)
+interL S.LInteger{} = return ([], tInt)
+inferL S.LString{}  = return ([], tString)
+inferL _            = E.throwE "FIXME: Unimplemented"
+
+-- | infer patterns
+inferP :: S.Pattern -> Typing ([Pred], [Assump], Ty)
+inferP (S.PVar v) = do t <- newTVar KStar
+                       return ([], [Assump v $ toSc t], t)
+inferP S.PWildcard = ([], [],) <$> newTVar KStar
+inferP (S.PLit l) = do (ps, t) <- inferL l
+                       return (ps, [], t)
+inferP (S.PCon c pats) = do (ps, as, ts) <- inferPs pats
+                            t' <- newTVar KStar
+                            Qual qs t <- lookupSymSc c >>= instSc
+                            unify t (foldr fn t' ts)
+                            return (ps <> qs, as, t')
+
+inferPs :: [S.Pattern] -> Typing ([Pred], [Assump], [Ty])
+inferPs pats = do s3 <- mapM inferP pats
+                  let ps = mconcat [ s | (s, _, _) <- s3 ]
+                  let as = mconcat [ s | (_, s, _) <- s3 ]
+                  let ts =         [ s | (_, _, s) <- s3 ]
+                  return (ps, as, ts)
+
+-- common signature for type inference
+type Infer e t = ClassEnv -> [Assump] -> e -> Typing ([Pred], t)
+
+isConstr :: Name -> Bool
+isConstr = isLetter . head
+
+inferE :: Infer S.Expression Ty
+inferE ce as (S.EVar i) = do Qual ps t <- (if isConstr i then lookupSymSc i else lookupAssump i as) >>= instSc
+                             return (ps, t)
+inferE ce as (S.ELit l) = inferL l
+inferE ce as (S.EApp l r) = do (ps, tl) <- inferE ce as l
+                               (qs, tr) <- inferE ce as r
+                               t <- newTVar KStar
+                               -- l   :: a -> b
+                               -- r   :: a
+                               -- l r :: b
+                               unify tl (tr `fn` t)
+                               return (ps <> qs, t)
+infer ce as (S.ELet bs e) = E.throwE "FIXME: Unimplemented"
 

@@ -1,6 +1,6 @@
 module Lang.Core where
 
-import           Misc                           ( Name )
+import           Misc                           ( Name, tupleCon )
 import qualified Lang.Surface                  as S
 
 data Kind
@@ -43,3 +43,18 @@ data Alt
   = Alt Name Sc Expr
   deriving (Show, Eq)
 
+fromArity :: Int -> Kind
+fromArity 0 = KStar
+fromArity n = KFun KStar $ fromArity $ n - 1
+
+tInt, tString, tUnit :: Ty
+tInt    = TCon $ TyCon "Int" KStar
+tString = TCon $ TyCon "String" KStar
+tUnit   = TCon $ TyCon "()" KStar
+tFun    = TCon $ TyCon "()" $ fromArity 2
+
+tTupleCon :: Int -> Ty
+tTupleCon n = TCon $ TyCon (tupleCon n) $ fromArity n
+
+fn :: Ty -> Ty -> Ty
+fn a b = TApp (TApp tFun a) b
