@@ -90,6 +90,9 @@ predsQ = braces (predi `sepBy1` comma) <|> singleton <$> predi
 
 -- {{{ pattern
 
+pattern' :: P Pattern
+pattern' = termP'
+
 -- | pattern!
 pattern :: P Pattern
 pattern = makeExprParser termP [[infix']]
@@ -118,10 +121,16 @@ listP :: P Pattern
 listP = PCon "[]" <$> brackets (pattern `sepBy` comma)
 
 conP :: P Pattern
-conP = PCon <$> identT <*> many pattern
+conP = PCon <$> identT <*> many pattern'
+
+conP' :: P Pattern
+conP' = flip PCon [] <$> identT
 
 termP :: P Pattern
 termP = litP <|> varP <|> conP <|> wildcardP <|> listP <|> try tupleP <|> parens pattern
+
+termP' :: P Pattern
+termP' = litP <|> varP <|> conP' <|> wildcardP <|> listP <|> try tupleP <|> parens pattern
 
 -- }}}
 
@@ -184,7 +193,7 @@ letBindingFormB :: P LetBindingForm
 letBindingFormB = try (PatternBinding <$> pattern <* lookAhead (equalsign)) <|> combinatorBindingFormB
 
 combinatorBindingFormB :: P LetBindingForm
-combinatorBindingFormB = CombinatorBinding <$> identV <*> many pattern
+combinatorBindingFormB = CombinatorBinding <$> identV <*> many pattern'
 
 doE :: P Expression
 doE = EDo <$> (symbol "do" *> someAligned doStmtS)
@@ -284,7 +293,7 @@ combinatorNameC = parens identO <|> identV
 -- (<+>) x y = ...
 combinatorDef :: P CombinatorDef
 combinatorDef = CombinatorDef <$> combinatorNameC
-                              <*> (many pattern <* equalsign)
+                              <*> (many pattern' <* equalsign)
                               <*> expr
 
 argsD :: P [Name]
@@ -358,7 +367,7 @@ upperChars  = ['A' .. 'Z']
 digitChars  = ['0' .. '9']
 
 op1Chars, opChars :: String
-op1Chars  = "<+-:~/%&?!.>*=@$"
+op1Chars  = "<+-:~/%&?!.>*=@$|"
 opChars   = op1Chars ++ "|#"
 
 var1Chars, varChars, con1Chars, conChars :: String

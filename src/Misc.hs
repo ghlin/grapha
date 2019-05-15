@@ -18,7 +18,7 @@ split p = s [] []
 
 topo :: Ord k => [((k, [k]), a)] -> Maybe [((k, [k]), a)]
 topo = t [] []
-  where satisfied s ((_, deps), _) = all (`elem` s) deps
+  where satisfied s ((k, deps), _) = all (`elem` (k:s)) deps
         names = fmap $ fst . fst
         t _ res [] = return res
         t s res ks = do let (ok, nope) = split (satisfied s) ks
