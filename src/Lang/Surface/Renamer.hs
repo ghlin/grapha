@@ -1,4 +1,4 @@
-module Lang.Surface.Rename
+module Lang.Surface.Renamer
   ( renameProgram
   ) where
 

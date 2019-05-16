@@ -1,4 +1,4 @@
-module Lang.Surface.Balance
+module Lang.Surface.Balancer
   ( balance
   ) where
 
