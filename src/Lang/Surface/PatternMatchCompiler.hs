@@ -1,5 +1,6 @@
 module Lang.Surface.PatternMatchCompiler
-  where
+  ( compileProgram
+  ) where
 
 import qualified Control.Monad.Trans.State     as T
 import           Control.Monad
@@ -16,6 +17,11 @@ groupToplevelBindings = g [] [] Nothing
         g s c (Just n') ((d@(CombinatorDef n _ _)):ds) = if n == n'
                                                           then g s (c <> [d]) (Just n) ds
                                                           else g (s <> [c]) [d] (Just n) ds
+
+splitLetBindings :: [[LetBinding]] -> ([[LetBinding]], [[LetBinding]])
+splitLetBindings = split (isPatternBinding . head)
+  where isPatternBinding (LetBinding (PatternBinding {}) _) = True
+        isPatternBinding _                                  = False
 
 -- | FIXME: 暂时未考虑annotation...
 groupLetBindings :: [LetBinding] -> [[LetBinding]]
@@ -148,10 +154,12 @@ compileC :: [CombinatorDef] -> M [CombinatorDef]
 compileC cds = mapM compileBindingGroup $ groupToplevelBindings cds
 
 compileE :: Expression -> M Expression
-compileE (ELet bs e) = do let groups = groupLetBindings bs
-                          bs' <- mapM compileLetBindingGroup groups
+compileE (ELet bs e) = do let (pgs, cgs) = splitLetBindings $ groupLetBindings bs
+                          bs' <- if null cgs
+                                    then return []
+                                    else mapM compileLetBindingGroup cgs
                           e'  <- compileE e
-                          return $ ELet bs' e'
+                          return $ ELet (mconcat pgs <> bs') e'
 compileE (EApp l r)   = EApp <$> compileE l <*> compileE r
 compileE (ELam ps e)  = ELam ps <$> compileE e
 compileE (ECase e as) = ECase <$> compileE e <*> mapM compileA as

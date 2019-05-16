@@ -47,11 +47,16 @@ fromType' cks vks k t = fromTypes cks vks k $ flatten t
 -- | [Type]由某个Type经过flatten得到,这里断言那个Type具有给定的Kind
 -- 在这个假设之下,推断Type内部符号的Kind
 fromTypes :: KindSubst -> KindSubst -> C.Kind -> [Type] -> TE KindSubst
+-- fromTypes cks vks k ts | trace ("fromTypes: " <> show k <> " --- and --- " <> show ts) False = undefined
 fromTypes cks vks k ts = syn vks k ts
   where syn  vks k (TVar f:rs) = do let ks' = replicate (length rs) C.KStar
                                     vks' <- synthsis cks vks ks' rs
                                     let k' = foldr C.KFun k ks'
                                     extendKS f k' vks'
+        syn  vks k (TCon c:[]) = do k' <- lookupKind c cks
+                                    if k /= k'
+                                       then Left $ "Kind mismatch: " <> show k <> " / " <> show k'
+                                       else return vks
         syn  vks k (TCon c:rs) = do ck <- lookupKind c cks
                                     let ks' = flattenK' ck
                                     vks' <- synthsis cks vks ks' rs
@@ -76,11 +81,13 @@ fromProd ks vs (ProductDef _ ts) = do vks <- foldM ft [] ts
                                             onlyVs n = n `elem` vs
 
 dataTypeKinds :: KindSubst -> DataTypeDef -> TE KindSubst
+-- dataTypeKinds k d | trace ("dataTypeKinds: " <> show k <> " " <> show d) False = undefined
 dataTypeKinds ks (DataTypeDef name as ps) = do as' <- mconcat <$> mapM (fromProd ks as) ps
                                                kas <- mapM (flip lookupKind as') as
                                                extendKS name (foldr C.KFun C.KStar kas) ks
 
 fromPred :: KindSubst -> KindSubst -> Pred -> TE KindSubst
+-- fromPred cks vks d | trace ("fromPred:\n===\n" <> show cks <> "\n===\n" <> show vks <> "\n===\n" <> show d) False = undefined
 fromPred cks vks (Pred i t) = do k <- lookupKind i cks
                                  fromType' cks vks k t
 
@@ -91,6 +98,7 @@ fromAnnot v cks vks (CombinatorAnnot _ (Qual ps t)) = do vks' <- foldM (fromPred
                                                          return $ filter ((== v) . fst) vks''
 
 classKinds :: KindSubst -> InterfaceDef -> TE KindSubst
+-- classKinds k d | trace ("classKinds:\n" <> show k <> "\n" <> show d) False = undefined
 classKinds ks (InterfaceDef name ps a as) = do ks' <- foldM (fromPred ks) [] ps
                                                vks <- foldM (fromAnnot a ks) ks' as
                                                k   <- lookupKind a vks
@@ -146,7 +154,6 @@ translateInstDef ks (InstanceDef i ps ty _) = do k   <- lookupKind i ks
                                                  ps' <- mapM (translatePred ks []) ps
                                                  tv  <- translateType ks [] k ty
                                                  return $ InstDef i ps' tv
-
 
 -- | 按照依赖顺序排序所有Interface
 topoClassDefs :: [InterfaceDef] -> TE [InterfaceDef]
