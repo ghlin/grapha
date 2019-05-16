@@ -1,4 +1,12 @@
-module Misc where
+module Misc
+  ( Name
+  , singleton
+  , tupleCon
+  , split
+  , topo
+  , topo'
+  ) where
+
 import           Control.Monad                  ( guard )
 
 type Name = String
@@ -16,11 +24,19 @@ split p = s [] []
     s y n (k : ks) | p k       = s (k : y) n ks
                    | otherwise = s y (k : n) ks
 
-topo :: Ord k => [((k, [k]), a)] -> Maybe [((k, [k]), a)]
-topo = t [] []
+type G k a = ((k, [k]), a)
+
+topo :: Ord k => [G k a] -> Maybe [G k a]
+topo ks = case topo' ks of
+            (good, []) -> Just good
+            _          -> Nothing
+
+topo' :: Ord k => [G k a] -> ([G k a], [G k a])
+topo' = t [] []
   where satisfied s ((k, deps), _) = all (`elem` (k:s)) deps
         names = fmap $ fst . fst
-        t _ res [] = return res
-        t s res ks = do let (ok, nope) = split (satisfied s) ks
-                        guard $ not $ null ok
-                        t (s <> names ok) (res <> ok) nope
+        t _ res [] = (res, [])
+        t s res ks = let (ok, nope) = split (satisfied s) ks
+                      in if null ok
+                            then (res, nope)
+                            else t (s <> names ok) (res <> ok) nope

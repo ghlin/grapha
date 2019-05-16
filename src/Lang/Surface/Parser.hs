@@ -1,6 +1,7 @@
 {-# LANGUAGE TupleSections #-}
 module Lang.Surface.Parser
-where
+  ( parser
+  ) where
 
 import           Control.Monad                  ( void, when, (>=>) )
 import           Control.Monad.Combinators.Expr

@@ -1,5 +1,9 @@
 module Lang.Surface.Subst
   ( fvs
+  , fvsP
+  , fvsA
+  , fvsB
+  , fvsBF
   , subst
   ) where
 
