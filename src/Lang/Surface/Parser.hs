@@ -18,14 +18,13 @@ import           Misc                           ( singleton, Name, tupleCon )
 -- {{{
 
 parser :: P Program
-parser = organize <$> (between scn eof $ many $ lexemeN toplevel)
+parser = organize <$> between scn eof (many $ lexemeN toplevel)
   where organize = foldl pick prog
-        prog = Program [] [] [] [] [] [] []
-        pick p (ToplevelInterfaceDef    d) = p { interfaceDefs    = interfaceDefs    p <> [d] }
+        prog = Program [] [] [] [] [] []
+        pick p (ToplevelTypeClassDef    d) = p { typeClassDefs    = typeClassDefs    p <> [d] }
         pick p (ToplevelInstanceDef     d) = p { instanceDefs     = instanceDefs     p <> [d] }
         pick p (ToplevelCombinatorDef   d) = p { combinatorDefs   = combinatorDefs   p <> [d] }
         pick p (ToplevelCombinatorAnnot d) = p { combinatorAnnots = combinatorAnnots p <> [d] }
-        pick p (ToplevelAliasDef        d) = p { aliasDefs        = aliasDefs        p <> [d] }
         pick p (ToplevelDataTypeDef     d) = p { dataTypeDefs     = dataTypeDefs     p <> [d] }
         pick p (ToplevelInfixDef        d) = p { infixDefs        = infixDefs        p <> [d] }
 -- }}}
@@ -89,14 +88,14 @@ predsQ = braces (predi `sepBy1` comma) <|> singleton <$> predi
 
 -- }}}
 
--- {{{ pattern
+-- {{{ pattern_
 
 pattern' :: P Pattern
 pattern' = termP'
 
--- | pattern!
-pattern :: P Pattern
-pattern = makeExprParser termP [[infix']]
+-- | pattern! (名字`pattern`会导致hlint抱怨'Parse error...' https://github.com/ndmitchell/hlint/issues/236)
+pattern_ :: P Pattern
+pattern_ = makeExprParser termP [[infix']]
   where infix' = InfixL $ do
           con <- identC
           return $ \a b -> PCon con [a, b]
@@ -112,14 +111,14 @@ wildcardP = PWildcard <$ asterisk
 
 tupleP :: P Pattern
 tupleP = do
-  ps <- parens $ pattern `sepBy` comma
+  ps <- parens $ pattern_ `sepBy` comma
   let arity = length ps
   when (arity == 1) $ fail "quotation" -- 此处会引起回溯
-                                       -- 可以在arity=1时构造单个pattern
+                                       -- 可以在arity=1时构造单个pattern_
   return $ PCon (tupleCon arity) ps
 
 listP :: P Pattern
-listP = PCon "[]" <$> brackets (pattern `sepBy` comma)
+listP = PCon "[]" <$> brackets (pattern_ `sepBy` comma)
 
 conP :: P Pattern
 conP = PCon <$> identT <*> many pattern'
@@ -128,10 +127,10 @@ conP' :: P Pattern
 conP' = flip PCon [] <$> identT
 
 termP :: P Pattern
-termP = litP <|> varP <|> conP <|> wildcardP <|> listP <|> try tupleP <|> parens pattern
+termP = litP <|> varP <|> conP <|> wildcardP <|> listP <|> try tupleP <|> parens pattern_
 
 termP' :: P Pattern
-termP' = litP <|> varP <|> conP' <|> wildcardP <|> listP <|> try tupleP <|> parens pattern
+termP' = litP <|> varP <|> conP' <|> wildcardP <|> listP <|> try tupleP <|> parens pattern_
 
 -- }}}
 
@@ -148,7 +147,7 @@ varE :: P Expression
 varE = EVar <$> (identV <|> identT)
 
 lamE :: P Expression
-lamE = ELam <$> (backslash *> some pattern)
+lamE = ELam <$> (backslash *> some pattern_)
             <*> (arrowR    *> expr)
 
 ifE :: P Expression
@@ -171,7 +170,7 @@ caseE = do
         laidout = someAligned caseAltE
 
 caseAltE :: P CaseAlternative
-caseAltE = CaseAlternative <$> pattern <*> (arrowR *> expr)
+caseAltE = CaseAlternative <$> pattern_ <*> (arrowR *> expr)
 
 letE :: P Expression
 letE = aligned $ \ref -> do
@@ -182,16 +181,10 @@ letE = aligned $ \ref -> do
   return $ ELet bindings body
 
 letBindingB :: P LetBinding
-letBindingB = try letBindingB' <|> letAnnotationB
-
-letAnnotationB :: P LetBinding
-letAnnotationB = BindingAnnotation <$> annotation
-
-letBindingB' :: P LetBinding
-letBindingB' = LetBinding <$> letBindingFormB <*> (equalsign *> expr)
+letBindingB = LetBinding <$> letBindingFormB <*> (equalsign *> expr)
 
 letBindingFormB :: P LetBindingForm
-letBindingFormB = try (PatternBinding <$> pattern <* lookAhead (equalsign)) <|> combinatorBindingFormB
+letBindingFormB = try (PatternBinding <$> pattern_ <* lookAhead equalsign) <|> combinatorBindingFormB
 
 combinatorBindingFormB :: P LetBindingForm
 combinatorBindingFormB = CombinatorBinding <$> identV <*> many pattern'
@@ -203,7 +196,7 @@ doLetS :: P DoStmt
 doLetS = symbol "let" *> (DoLetBinding <$> letBindingFormB <*> (equalsign *> expr))
 
 doBindS :: P DoStmt
-doBindS = optional (try $ pattern <* arrowL) >>= probe
+doBindS = optional (try $ pattern_ <* arrowL) >>= probe
   where probe mpat = DoBind mpat <$> expr
 
 doStmtS :: P DoStmt
@@ -246,8 +239,8 @@ expr' = do
     rs <- many $ try $ (,) <$> termE <*> infixOpE
     el <- expr
     return $ rotate $ build el $ (e1, o1):rs
-      where build el ps                          = foldr mk el ps
-            mk (l, o) r                          = EBinary o l r
+      where build                                = foldr mk
+            mk (l, o)                            = EBinary o l
             rotate (EBinary α a (EBinary β b c)) = rotate $ EBinary β (EBinary α a b) c
             rotate x                             = x
 
@@ -258,33 +251,25 @@ expr' = do
 -- | toplevel
 toplevel :: P ToplevelDef
 toplevel = (ToplevelInfixDef        <$> infixDef)
-       <|> (ToplevelAliasDef        <$> aliasDef)
        <|> (ToplevelDataTypeDef     <$> dataTypeDef)
-       <|> (ToplevelInterfaceDef    <$> (lookAhead (symbol "interface") *> interfaceDef))
+       <|> (ToplevelTypeClassDef    <$> typeClassDef)
        <|> (ToplevelInstanceDef     <$> instanceDef)
        <|> (ToplevelCombinatorAnnot <$> try combinatorAnnot)
        <|> (ToplevelCombinatorDef   <$> combinatorDef)
 
--- | alias: alias P a = Parsec ... a
-aliasDef :: P AliasDef
-aliasDef = AliasDef <$> (symbol "alias" *> identT)
-                    <*> argsD
-                    <*> (equalsign *> typing)
-
 -- | infix[l|r] <prece> <op>
--- e.g. infixl 4 (<$>)
+-- e.g. infixl 4 <$>
 infixDef :: P InfixDef
 infixDef = do
   assoc <- assocI
   prec  <- integer
-  name  <- parens  (identC <|> identO) <|> infixFnE
+  name  <- identC <|> identO <|> infixFnE
   return $ InfixDef name prec assoc
 
 assocI :: P InfixAssoc
 assocI = try (symbol "infixl" $> AssocLeft)
      <|> try (symbol "infixr" $> AssocRight)
-     <|>     (symbol "infix"  $> AssocNone)
-
+     <|> try (symbol "infix"  $> AssocNone) -- `try` is necessary, see `toplevel`
 
 combinatorNameC :: P Name
 combinatorNameC = parens identO <|> identV
@@ -297,9 +282,6 @@ combinatorDef = CombinatorDef <$> combinatorNameC
                               <*> (many pattern' <* equalsign)
                               <*> expr
 
-argsD :: P [Name]
-argsD = many identV
-
 -- | combinator annotation
 -- main : IO ()
 combinatorAnnot :: P CombinatorAnnot
@@ -311,7 +293,7 @@ dataTypeDef :: P DataTypeDef
 dataTypeDef = do
   symbol "datatype"
   name  <- identT
-  args  <- argsD
+  args  <- many identV
   prods <- try compact <|> laidout
   return $ DataTypeDef name args prods
   where compact = equalsign *> productD `sepBy` vertbar
@@ -322,15 +304,15 @@ dataTypeDef = do
 productD :: P ProductDef
 productD = ProductDef <$> identT <*> many termT'
 
--- | interface [ <preds> => ] <name> <arg>
+-- | typeClass [ <preds> => ] <name> <arg>
 --     <member-defs>
-interfaceDef :: P InterfaceDef
-interfaceDef = do
-  symbol "interface"
+typeClassDef :: P TypeClassDef
+typeClassDef = do
+  symbol "typeclass"
   (preds, name, arg) <- try full <|> simple
   members <- aligned $ \ref ->
     combinatorAnnot `sepBy1` try (scn *> indented ref (return ()))
-  return $ InterfaceDef name preds arg members
+  return $ TypeClassDef name preds arg members
   where full = (,,) <$> predsQ <* fatArrowR <*> identT <*> identV
         simple = ([],,) <$> identT <*> identV
 
@@ -399,9 +381,8 @@ rwsV = [ "let"
        , "of"
        , "with"
        , "type"
-       , "alias"
        , "instance"
-       , "interface"
+       , "typeclass"
        , "where"
        , "infix"
        , "infixl"

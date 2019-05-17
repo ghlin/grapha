@@ -21,7 +21,7 @@ fvs (EVar v)       = [v]
 fvs (EApp l r)     = fvs l `union` fvs r
 fvs (EIf c t e)    = fvs c `union` fvs t `union` fvs e
 fvs (ELam pts e)   = fvs e \\ mconcat (fvsP <$> pts)
-fvs (ECase e alts) = fvs e `union` (mconcat $ fvsA <$> alts)
+fvs (ECase e alts) = fvs e `union` mconcat (fvsA <$> alts)
 fvs (ELet bs e)    = (mconcat (fvsB <$> bs) `union` fvs e) \\ fvsBFs bs
 fvs e              = error $ "Unexpected exp type: " <> show e
 
@@ -38,7 +38,6 @@ fvsBFs = mconcat . fmap fvsBF
 
 fvsBF :: LetBinding -> [Name]
 fvsBF (LetBinding f _) = fvsBF' f
-fvsBF _                = []
 
 fvsBF' :: LetBindingForm -> [Name]
 fvsBF' (PatternBinding p)      = fvsP p
@@ -47,7 +46,6 @@ fvsBF' (CombinatorBinding n _) = [n]
 fvsB :: LetBinding -> [Name]
 fvsB (LetBinding (PatternBinding _) e)       = fvs e
 fvsB (LetBinding (CombinatorBinding n ps) e) = fvs e \\ multi fvsP ps
-fvsB _                                       = []
 
 multi :: (a -> [b]) -> [a] -> [b]
 multi f = mconcat . fmap f

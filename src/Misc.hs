@@ -15,6 +15,7 @@ singleton :: a -> [a]
 singleton = (:[])
 
 tupleCon :: Int -> String
+tupleCon 0 = "()"
 tupleCon n = "(" ++ replicate (n - 1) ',' ++ ")"
 
 split :: (a -> Bool) -> [a] -> ([a], [a])

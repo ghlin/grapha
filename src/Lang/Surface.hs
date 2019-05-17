@@ -1,5 +1,6 @@
 module Lang.Surface where
 
+import           Data.Char                      ( isLetter )
 import           Misc                           ( Name )
 
 -- {{{ 用于表示(Grapha语言中)类型
@@ -32,18 +33,13 @@ data ProductDef
 data DataTypeDef
   = DataTypeDef Name [Name] [ProductDef]
   deriving (Show, Eq)
-
--- | Alias定义
-data AliasDef
-  = AliasDef Name [Name] Type
-  deriving (Show, Eq)
 -- }}}
 
--- {{{ interface(类型类)和instance定义
+-- {{{ typeclass和instance定义
 
--- | interface定义
-data InterfaceDef
-  = InterfaceDef Name [Pred] Name [CombinatorAnnot]
+-- | typeClass定义
+data TypeClassDef
+  = TypeClassDef Name [Pred] Name [CombinatorAnnot]
   deriving (Show, Eq)
 
 -- | instance定义
@@ -77,8 +73,7 @@ data Expression
 
 -- | Let绑定
 data LetBinding
-  = LetBinding        LetBindingForm Expression -- ^ 绑定
-  | BindingAnnotation Annotation                -- ^ 类型注解
+  = LetBinding LetBindingForm Expression -- ^ 绑定
   deriving (Show, Eq)
 
 -- | 对某个名字的注解
@@ -109,10 +104,10 @@ data DoStmt
 
 -- | 表示一个Pattern
 data Pattern
-  = PVar      Name           -- ^ 绑定符号(名字)
-  | PLit      Literal        -- ^ 字面量
-  | PCon      Name [Pattern] -- ^ 复合的
-  | PWildcard                -- ^ 通配符,Haskell中的`_`
+  = PVar      Name              -- ^ 绑定符号(名字)
+  | PLit      Literal           -- ^ 字面量
+  | PCon      Name    [Pattern] -- ^ 复合的
+  | PWildcard                   -- ^ 通配符,Haskell中的`_`
   deriving (Show, Eq)
 
 -- }}}
@@ -161,8 +156,7 @@ data ToplevelDef
   | ToplevelCombinatorAnnot CombinatorAnnot -- ^ 组合子/中缀运算符类型注解
   | ToplevelInfixDef        InfixDef        -- ^ 中缀运算符结合性/优先级定义
   | ToplevelDataTypeDef     DataTypeDef     -- ^ ADT定义
-  | ToplevelAliasDef        AliasDef        -- ^ Alias定义
-  | ToplevelInterfaceDef    InterfaceDef    -- ^ 接口(类型类)定义
+  | ToplevelTypeClassDef    TypeClassDef    -- ^ 类型类定义
   | ToplevelInstanceDef     InstanceDef     -- ^ 实例定义
   deriving (Show, Eq)
 
@@ -173,12 +167,11 @@ data ToplevelDef
 -- | program由许多Toplevel定义组成
 data Program
   = Program
-    { interfaceDefs    :: [InterfaceDef]
+    { typeClassDefs    :: [TypeClassDef]
     , instanceDefs     :: [InstanceDef]
     , combinatorDefs   :: [CombinatorDef]
     , combinatorAnnots :: [CombinatorAnnot]
     , dataTypeDefs     :: [DataTypeDef]
-    , aliasDefs        :: [AliasDef]
     , infixDefs        :: [InfixDef]
     }
   deriving (Show)
@@ -207,7 +200,6 @@ class HasExpression f where
 
 instance HasExpression LetBinding where
   mapE f (LetBinding fm e) = LetBinding fm $ f e
-  mapE _ x                 = x
 
 instance HasExpression DoStmt where
   mapE f (DoBind p e)       = DoBind p $ f e
@@ -234,5 +226,12 @@ instance HasExpression Program where
 
 fn :: Type -> Type -> Type
 fn t1 t2 = TApp (TApp (TCon "->") t1) t2
+
+isConstr :: Name -> Bool
+isConstr "[]" = True
+isConstr n    = isLetter (head n) || (head n == ':') || (head n == '(')
+
+builtinTyConstrs :: [Name]
+builtinTyConstrs = ["Int", "String", "Double", "Char"]
 
 -- }}}

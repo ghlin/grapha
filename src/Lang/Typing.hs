@@ -123,7 +123,7 @@ type Class = ([Name], [Inst])
 
 type Inst  = Qual Pred
 
-data ClassEnv
+newtype ClassEnv
   = ClassEnv
     { classes :: [(Name, Class)]
     }
@@ -238,7 +238,7 @@ runTyping :: [(Name, Sc)] -> Typing a -> Either TypingError a
 runTyping sc = flip T.evalState (initialState sc) . E.runExceptT
 
 initialState :: [(Name, Sc)] -> TypingState
-initialState cs = TypingState 0 empty cs
+initialState = TypingState 0 empty
 
 lookupSymSc :: Name -> Typing Sc
 lookupSymSc i = do vcs <- lift $ T.gets symtab
@@ -314,11 +314,8 @@ inferPs pats = do s3 <- mapM inferP pats
 -- common signature for type inference
 type Infer e t = ClassEnv -> [Assump] -> e -> Typing ([Pred], t)
 
-isConstr :: Name -> Bool
-isConstr = isLetter . head
-
 inferE :: Infer S.Expression Ty
-inferE ce as (S.EVar i) = do Qual ps t <- (if isConstr i then lookupSymSc i else lookupAssump i as) >>= instSc
+inferE ce as (S.EVar i) = do Qual ps t <- (if S.isConstr i then lookupSymSc i else lookupAssump i as) >>= instSc
                              return (ps, t)
 inferE ce as (S.ELit l) = inferL l
 inferE ce as (S.EApp l r) = do (ps, tl) <- inferE ce as l

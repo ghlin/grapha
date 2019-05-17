@@ -13,23 +13,23 @@ import Debug.Trace
 groupToplevelBindings :: [CombinatorDef] -> [[CombinatorDef]]
 groupToplevelBindings = g [] [] Nothing
   where g s c _ [] = s <> [c]
-        g s _ Nothing   ((d@(CombinatorDef n _ _)):ds) = g s [d] (Just n) ds
-        g s c (Just n') ((d@(CombinatorDef n _ _)):ds) = if n == n'
+        g s _ Nothing   (d@(CombinatorDef n _ _):ds) = g s [d] (Just n) ds
+        g s c (Just n') (d@(CombinatorDef n _ _):ds) = if n == n'
                                                           then g s (c <> [d]) (Just n) ds
                                                           else g (s <> [c]) [d] (Just n) ds
 
 splitLetBindings :: [[LetBinding]] -> ([[LetBinding]], [[LetBinding]])
 splitLetBindings = split (isPatternBinding . head)
-  where isPatternBinding (LetBinding (PatternBinding {}) _) = True
-        isPatternBinding _                                  = False
+  where isPatternBinding (LetBinding PatternBinding {} _) = True
+        isPatternBinding _                                = False
 
 -- | FIXME: 暂时未考虑annotation...
 groupLetBindings :: [LetBinding] -> [[LetBinding]]
 groupLetBindings = g [] [] Nothing
   where g s c _ []    = s <> [c]
-        g s c l        ((d@(LetBinding (PatternBinding {}) _)):ds)     = g ([d]:s) c l ds
-        g s c Nothing  ((d@(LetBinding (CombinatorBinding k _) _)):ds) = g s [d] (Just k) ds
-        g s c (Just n) ((d@(LetBinding (CombinatorBinding k _) _)):ds) = if n == k
+        g s c l        (d@(LetBinding PatternBinding {} _):ds)       = g ([d]:s) c l ds
+        g s c Nothing  (d@(LetBinding (CombinatorBinding k _) _):ds) = g s [d] (Just k) ds
+        g s c (Just n) (d@(LetBinding (CombinatorBinding k _) _):ds) = if n == k
                                                                            then g s (c <> [d])   (Just n) ds
                                                                            else g (s <> [c]) [d] (Just n) ds
 
@@ -56,13 +56,12 @@ toMatchClause (CombinatorDef _ ps e) = (ps, e)
 
 -- | 分组, 结果形式为CTCon和CTVar交替出现
 partition :: [MatchClause] -> [(ClauseType, [MatchClause])]
--- partition ms | trace ("PARTITION:\n CLAUSE= " <> unlines (show <$> ms)) False = undefined
-partition ms = p Nothing [] [] ms
+partition = p Nothing [] []
   where
-    p Nothing   q _ ((m@((p1:_), _)):ms) = p (Just $ ofClause p1) q [m] ms
-    p (Just ct) q c []                   = q <> [(ct, c)]
-    p (Just ct) q c ((m@((p1:_), _)):ms) | ct == ofClause p1 = p (Just ct) q (c <> [m]) ms
-                                         | otherwise = p (Just $ ofClause p1) (q <> [(ct, c)]) [m] ms
+    p Nothing   q _ (m@(p1:_, _):ms) = p (Just $ ofClause p1) q [m] ms
+    p (Just ct) q c []               = q <> [(ct, c)]
+    p (Just ct) q c (m@(p1:_, _):ms) | ct == ofClause p1 = p (Just ct) q (c <> [m]) ms
+                                     | otherwise = p (Just $ ofClause p1) (q <> [(ct, c)]) [m] ms
 
 data PMCState
   = PMCState
@@ -130,8 +129,7 @@ runMatch (n:ns) e (CTLit, cs) = do alts <- mapM (matchPLit ns e) cs
 groupCon :: [MatchClause] -> [(Name, [MatchClause])]
 groupCon = g []
   where
-    g q []      = q
-    g q (m:ms)  = g (insert m q) ms
+    g = foldl $ flip insert
     insert m@(PCon c _:_, _) [] = [(c, [m])]
     insert m@(PCon c _:_, _) ((k, ms):rs) | k == c = (k, ms <> [m]):rs
                                           | otherwise = (k, ms):insert m rs
@@ -148,7 +146,7 @@ compileBindingGroup cs = do let combA (CombinatorDef _ ps _) = length ps
                             return $ CombinatorDef name (PVar <$> us) e
 
 compileLetBindingGroup :: [LetBinding] -> M LetBinding
-compileLetBindingGroup ls = fromCombinatorDef <$> (compileBindingGroup $ fromLetBinding <$> ls)
+compileLetBindingGroup ls = fromCombinatorDef <$> compileBindingGroup (fromLetBinding <$> ls)
 
 compileC :: [CombinatorDef] -> M [CombinatorDef]
 compileC cds = mapM compileBindingGroup $ groupToplevelBindings cds
@@ -179,6 +177,7 @@ compileP p = do let ids = instanceDefs  p
                 ids' <- mapM compileI ids
                 return $ p { instanceDefs = ids', combinatorDefs = cds' }
 
+-- | 编译prog内所有定义的多组pattern match到一个单独的定义(其body是一个ECase)
 compileProgram :: Program -> Program
 compileProgram p = T.evalState (compileP p) $ PMCState 0 (dataTypeDefs p)
 

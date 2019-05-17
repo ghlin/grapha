@@ -1,4 +1,4 @@
-{--- | 排序Let和CombinatorDefs, 使得每一组仅依赖组内和之前组的定义
+{--- | 为Let和CombinatorDefs重新分组, 使得每一组仅依赖组内和/或之前组的定义
  ---
  --- 例如:
  ---
@@ -40,11 +40,20 @@ re' :: [Name] -> [N a] -> ([N a], [N a])
 re' = split . satisfied
   where satisfied syms ((deps, _), _) = all (`elem` syms) deps
 
-re :: [Name] -> [N a] -> [[N a]]
-re syms = r syms []
-  where r syms outs ins = case re' syms ins of
-                            ([], cyc)  -> cyc:outs
-                            (ok, pend) -> let introduced = mconcat $ (snd . fst) <$> ok
+re ::  [N a] -> [[N a]]
+re nodes = r initialDeps [] nodes
+  where allDeps         = mconcat $ fst . fst <$> nodes
+        allProvides     = mconcat $ snd . fst <$> nodes
+        initialDeps     = allDeps \\ allProvides
+        r syms outs ins = case re' syms ins of
+                            ([], cyc)  -> cyc:outs -- cyc内存在循环依赖或者依赖缺失
+                                                   -- TODO 考虑:
+                                                   --   m: (["m", "n"], "m")
+                                                   --   n: (["m", "n"], "n")
+                                                   --   q: (["m", "n"], "q")
+                                                   -- 实际结果应当为     (m, n)    (q)
+                                                   -- 但现在会粗略地返回 (m, n, q)
+                            (ok, pend) -> let introduced = mconcat $ snd . fst <$> ok
                                            in r (syms <> introduced) ((singleton <$> ok) <> outs) pend
 
 mk :: [Name] -> [Name] -> a -> N a
@@ -53,17 +62,13 @@ mk deps provides payload = ((deps \\ provides, provides), payload)
 regroupLetBinding :: [LetBinding] -> Expression -> Expression
 regroupLetBinding bs body =
   let mkN b@(LetBinding (PatternBinding p) e)       = ((fvs e, fvsP p), b)
-      mkN b@(LetBinding (CombinatorBinding n ps) e) = mk (fvs e \\ mconcat (fvsP <$> ps)) ([n]) b
-      nodes                                         = mkN <$> bs
-      depSyms                                       = mconcat $ fst . fst <$> nodes
-      provideSyms                                   = mconcat $ snd . fst <$> nodes
-      initialSyms                                   = depSyms \\ provideSyms
-      groups                                        = fmap snd <$> re initialSyms nodes
+      mkN b@(LetBinding (CombinatorBinding n ps) e) = mk (fvs e \\ mconcat (fvsP <$> ps)) [n] b
+      groups                                        = fmap snd <$> re (mkN <$> bs)
    in foldr ELet body groups
 
 regroupE' :: Expression -> Expression
-regroupE' (ELet bs e)                              = regroupLetBinding bs e
-regroupE' e                                        = e
+regroupE' (ELet bs e) = regroupLetBinding bs e
+regroupE' e           = e
 
 regroupE :: Expression -> Expression
 regroupE = propagateE regroupE'

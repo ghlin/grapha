@@ -22,7 +22,7 @@ checkAssoc db l r = let (la, lp) = maybe defaultAssoc id $ lookup l db
                      -- FIXME: check missassoc (la == ra == None ?)
 
 balance' :: InfixDatabase -> Expression -> Expression
-balance' db x = r x
+balance' db = r
   where
     r (ELam  p e        ) = EIndir $ ELam p $ r e
     r (EApp  f e        ) = EIndir $ EApp (r f) (r e)

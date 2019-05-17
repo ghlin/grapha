@@ -94,8 +94,6 @@ rename' s = r
                 s'' <- assignMany "pat" s' $ flatten' ps
                 e' <- rename' s'' e
                 return $ LetBinding (CombinatorBinding (var s' comb) (pat s'' <$> ps)) e'
-              rB s' (BindingAnnotation (Annotation name sc)) =
-                return $ BindingAnnotation $ Annotation (var s' name) sc
     r (EDo stmts) = do
       let names = [name | DoBind (Just pattern) _ <- stmts, name <- flatten pattern]
                <> [name | DoLetBinding (PatternBinding pattern) _ <- stmts, name <- flatten pattern]
