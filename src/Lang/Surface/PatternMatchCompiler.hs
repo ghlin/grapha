@@ -10,6 +10,10 @@ import           Misc
 
 import Debug.Trace
 
+-- | 编译prog内所有定义的多组pattern match到一个单独的定义(其body是一个ECase)
+compileProgram :: Program -> Program
+compileProgram p = T.evalState (compileP p) $ PMCState 0 (dataTypeDefs p)
+
 groupToplevelBindings :: [CombinatorDef] -> [[CombinatorDef]]
 groupToplevelBindings = g [] [] Nothing
   where g s c _ [] = s <> [c]
@@ -23,7 +27,6 @@ splitLetBindings = split (isPatternBinding . head)
   where isPatternBinding (LetBinding PatternBinding {} _) = True
         isPatternBinding _                                = False
 
--- | FIXME: 暂时未考虑annotation...
 groupLetBindings :: [LetBinding] -> [[LetBinding]]
 groupLetBindings = g [] [] Nothing
   where g s c _ []    = s <> [c]
@@ -149,6 +152,7 @@ compileLetBindingGroup :: [LetBinding] -> M LetBinding
 compileLetBindingGroup ls = fromCombinatorDef <$> compileBindingGroup (fromLetBinding <$> ls)
 
 compileC :: [CombinatorDef] -> M [CombinatorDef]
+compileC [] = return []
 compileC cds = mapM compileBindingGroup $ groupToplevelBindings cds
 
 compileE :: Expression -> M Expression
@@ -176,8 +180,3 @@ compileP p = do let ids = instanceDefs  p
                 cds' <- compileC cds
                 ids' <- mapM compileI ids
                 return $ p { instanceDefs = ids', combinatorDefs = cds' }
-
--- | 编译prog内所有定义的多组pattern match到一个单独的定义(其body是一个ECase)
-compileProgram :: Program -> Program
-compileProgram p = T.evalState (compileP p) $ PMCState 0 (dataTypeDefs p)
-

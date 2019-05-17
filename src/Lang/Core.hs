@@ -1,6 +1,9 @@
 module Lang.Core where
 
-import           Misc                           ( Name, tupleCon )
+import           Control.Monad                  ( foldM )
+import           Misc                           ( Name
+                                                , tupleCon
+                                                )
 import qualified Lang.Surface                  as S
 
 data Kind
@@ -47,6 +50,14 @@ fromArity :: Int -> Kind
 fromArity 0 = KStar
 fromArity n = KFun KStar $ fromArity $ n - 1
 
+applyK :: Monad m => Kind -> Kind -> m Kind
+applyK (KFun k1 k2) k | k1 == k = return k2
+applyK _            _           = fail "Kind mismatch"
+
+applyKs :: Monad m => Kind -> [Kind] -> m Kind
+applyKs = foldM applyK
+
+
 tInt, tString, tUnit :: Ty
 tInt    = TCon $ TyCon "Int" KStar
 tString = TCon $ TyCon "String" KStar
@@ -58,3 +69,5 @@ tTupleCon n = TCon $ TyCon (tupleCon n) $ fromArity n
 
 fn :: Ty -> Ty -> Ty
 fn a b = TApp (TApp tFun a) b
+
+

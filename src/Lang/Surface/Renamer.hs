@@ -9,6 +9,14 @@ import           Data.Maybe                     ( fromMaybe )
 import           Lang.Surface
 import           Misc
 
+-- | 为局部(local)符号选择无重复的名字
+-- e.g.
+-- \x y z -> (\x y z -> (x, y, z)) x y z
+-- ==>
+-- \x{pat1} y{pat2} z{pat3} -> (\x{pat4} y{pat5} z{pat6} -> (x{pat4}, y{pat5}, z{pat6})) x{pat1} y{pat2} z{pat3}
+renameProgram :: Program -> Program
+renameProgram prog = T.evalState (renameProgram' M.empty prog) (State 0)
+
 type Subst = M.Map Name Name
 
 data State
@@ -128,12 +136,3 @@ renameProgram' s prog = do
   instances'   <- mapM (renameInstanceDef' s) instances
   combinators' <- mapM (renameCombinatorDef' s) combinators
   return $ prog { instanceDefs = instances', combinatorDefs = combinators' }
-
--- | 为局部(local)符号选择无重复的名字
--- e.g.
--- \x y z -> (\x y z -> (x, y, z)) x y z
--- ==>
--- \x{pat1} y{pat2} z{pat3} -> (\x{pat4} y{pat5} z{pat6} -> (x{pat4}, y{pat5}, z{pat6})) x{pat1} y{pat2} z{pat3}
-renameProgram :: Program -> Program
-renameProgram prog = T.evalState (renameProgram' M.empty prog) (State 0)
-

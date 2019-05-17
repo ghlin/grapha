@@ -22,13 +22,12 @@
  ---
  ---}
 module Lang.Surface.Grouper
-where
+  ( regroupE
+  , regroupCombinators
+  ) where
 
 import           Debug.Trace
-import           Data.List                      ( union
-                                                , intersect
-                                                , (\\)
-                                                )
+import           Data.List                      ( (\\) )
 import           Misc
 import           Lang.Surface
 import           Lang.Surface.Subst

@@ -15,6 +15,7 @@ import           Data.List                      ( union
 import           Misc
 import           Lang.Surface
 
+-- | 获取表达式中的自由变量
 fvs :: Expression -> [Name]
 fvs (ELit _)       = []
 fvs (EVar v)       = [v]
@@ -24,6 +25,16 @@ fvs (ELam pts e)   = fvs e \\ mconcat (fvsP <$> pts)
 fvs (ECase e alts) = fvs e `union` mconcat (fvsA <$> alts)
 fvs (ELet bs e)    = (mconcat (fvsB <$> bs) `union` fvs e) \\ fvsBFs bs
 fvs e              = error $ "Unexpected exp type: " <> show e
+
+-- | 将表达式中名为'n'的自由变量替换为't'
+subst :: Name -> Name -> Expression -> Expression
+subst n t (EVar v)    | n == v                    = EVar t
+subst n t (ELam ps e) | n `notElem` multi fvsP ps = ELam ps $ subst n t e
+subst n t (EApp l r)                              = EApp (subst n t l) (subst n t r)
+subst n t (ELet bs e) | n `notElem` fvsBFs bs     = ELet (substBs n t bs) (subst n t e)
+subst n t (ECase e alts)                          = ECase (subst n t e) (substA n t <$> alts)
+subst n t (EIf c h e   )                          = EIf (subst n t c) (subst n t h) (subst n t e)
+subst _ _ e                                       = e
 
 fvsP :: Pattern -> [Name]
 fvsP (PCon _ ps) = mconcat $ fvsP <$> ps
@@ -49,15 +60,6 @@ fvsB (LetBinding (CombinatorBinding n ps) e) = fvs e \\ multi fvsP ps
 
 multi :: (a -> [b]) -> [a] -> [b]
 multi f = mconcat . fmap f
-
-subst :: Name -> Name -> Expression -> Expression
-subst n t (EVar v)    | n == v                    = EVar t
-subst n t (ELam ps e) | n `notElem` multi fvsP ps = ELam ps $ subst n t e
-subst n t (EApp l r)                              = EApp (subst n t l) (subst n t r)
-subst n t (ELet bs e) | n `notElem` fvsBFs bs     = ELet (substBs n t bs) (subst n t e)
-subst n t (ECase e alts)                          = ECase (subst n t e) (substA n t <$> alts)
-subst n t (EIf c h e   )                          = EIf (subst n t c) (subst n t h) (subst n t e)
-subst _ _ e                                       = e
 
 substA :: Name -> Name -> CaseAlternative -> CaseAlternative
 substA n t (CaseAlternative p e) | n `notElem` fvsP p = CaseAlternative p $ subst n t e

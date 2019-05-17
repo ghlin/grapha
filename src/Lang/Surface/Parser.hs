@@ -71,7 +71,7 @@ listT = TApp (TCon "[]") <$> brackets typing
 
 termT :: P Type
 termT = listT <|> ((varT <|> conT) >>= probe) <|> try tupleT <|> (parens typing >>= probe)
-  where probe t1 = fallback' t1 $ TApp t1 <$> termT
+  where probe t1 = fallback' t1 $ (TApp t1 <$> termT') >>= probe
 
 termT' :: P Type
 termT' = listT <|> (varT <|> conT) <|> try tupleT <|> parens typing

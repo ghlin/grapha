@@ -15,12 +15,12 @@ import           Lang.Typing             hiding ( ClassEnv(..)
                                                 )
 import           Misc
 
-predname :: Pred -> Name
-predname (Pred n _) = n
-
 classes   :: Program -> [(Name, [Name])]
 classes = fmap pick . typeClassDefs
   where pick (TypeClassDef name preds _ _) = (name, predname <$> preds)
+
+predname :: Pred -> Name
+predname (Pred n _) = n
 
 type TE a = Either String a
 type KindSubst = [(Name, C.Kind)]
@@ -57,7 +57,7 @@ fromTypes cks = syn
         syn  vks k (TCon c:rs) = do ck <- lookupKind c cks
                                     let ks' = flattenK' ck
                                     vks' <- synthsis cks vks ks' rs
-                                    k' <- applyKs ck ks'
+                                    k' <- C.applyKs ck ks'
                                     if k /= k'
                                        then Left $ "Kind mismatch: " <> show k <> " / " <> show k'
                                        else return vks'
@@ -114,13 +114,6 @@ flattenK k            = [k]
 
 flattenK' :: C.Kind -> [C.Kind]
 flattenK' = init . flattenK
-
-applyK :: C.Kind -> C.Kind -> TE C.Kind
-applyK (C.KFun k1 k2) k | k1 == k = return k2
-applyK _              _           = Left "Kind mismatch"
-
-applyKs :: C.Kind -> [C.Kind] -> TE C.Kind
-applyKs = foldM applyK
 
 translatePred :: KindSubst -> KindSubst -> Pred -> TE C.Pred
 translatePred cks vks (Pred i t) = do k <- lookupKind i cks
