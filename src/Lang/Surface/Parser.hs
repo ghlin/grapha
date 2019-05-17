@@ -88,7 +88,7 @@ predsQ = braces (predi `sepBy1` comma) <|> singleton <$> predi
 
 -- }}}
 
--- {{{ pattern_
+-- {{{ pattern
 
 pattern' :: P Pattern
 pattern' = termP'
@@ -97,7 +97,7 @@ pattern' = termP'
 pattern_ :: P Pattern
 pattern_ = makeExprParser termP [[infix']]
   where infix' = InfixL $ do
-          con <- identC
+          con <- infixT
           return $ \a b -> PCon con [a, b]
 
 varP :: P Pattern
@@ -187,7 +187,9 @@ letBindingFormB :: P LetBindingForm
 letBindingFormB = try (PatternBinding <$> pattern_ <* lookAhead equalsign) <|> combinatorBindingFormB
 
 combinatorBindingFormB :: P LetBindingForm
-combinatorBindingFormB = CombinatorBinding <$> identV <*> many pattern'
+combinatorBindingFormB = do
+  (name, pats) <- combinatorLHS
+  return $ CombinatorBinding name pats
 
 doE :: P Expression
 doE = EDo <$> (symbol "do" *> someAligned doStmtS)
@@ -225,18 +227,12 @@ termE' = litE
      <|> listLiteralE
      <|> EQuoted <$> parens expr -- TODO: prefix operator
 
-infixOpE :: P Name
-infixOpE = identO <|> infixFnE
-
-infixFnE :: P Name
-infixFnE = backquotes $ identV <|> identO
-
 expr' :: P Expression
 expr' = do
   e1 <- termE
   fallback' e1 $ do
-    o1 <- infixOpE
-    rs <- many $ try $ (,) <$> termE <*> infixOpE
+    o1 <- infixV <|> infixT
+    rs <- many $ try $ (,) <$> termE <*> (infixV <|> infixV)
     el <- expr
     return $ rotate $ build el $ (e1, o1):rs
       where build                                = foldr mk
@@ -263,13 +259,20 @@ infixDef :: P InfixDef
 infixDef = do
   assoc <- assocI
   prec  <- integer
-  name  <- identC <|> identO <|> infixFnE
+  name  <- infixV <|> infixT
   return $ InfixDef name prec assoc
 
 assocI :: P InfixAssoc
 assocI = try (symbol "infixl" $> AssocLeft)
      <|> try (symbol "infixr" $> AssocRight)
      <|> try (symbol "infix"  $> AssocNone) -- `try` is necessary, see `toplevel`
+
+combinatorLHS :: P (Name, [Pattern])
+combinatorLHS = try ((,) <$> combinatorNameC <*> many pattern' <* lookAhead equalsign) <|> do
+  l <- pattern'
+  c <- infixV
+  r <- pattern'
+  return (c, [l, r])
 
 combinatorNameC :: P Name
 combinatorNameC = parens identO <|> identV
@@ -278,9 +281,10 @@ combinatorNameC = parens identO <|> identV
 -- f x y = ...
 -- (<+>) x y = ...
 combinatorDef :: P CombinatorDef
-combinatorDef = CombinatorDef <$> combinatorNameC
-                              <*> (many pattern' <* equalsign)
-                              <*> expr
+combinatorDef = do
+  (name, args) <- combinatorLHS
+  body <- equalsign *> expr
+  return $ CombinatorDef name args body
 
 -- | combinator annotation
 -- main : IO ()
@@ -344,8 +348,8 @@ arrowR    = symbol "->"
 arrowL    = symbol "<-"
 fatArrowR = symbol "=>"
 
-upperChars, letterChars, digitChars :: String
-letterChars = ['a' .. 'z']
+upperChars, lowerChars, digitChars :: String
+lowerChars = ['a' .. 'z']
 upperChars  = ['A' .. 'Z']
 digitChars  = ['0' .. '9']
 
@@ -354,13 +358,19 @@ op1Chars  = "<+-:~/%&?!.>*=@$|"
 opChars   = op1Chars ++ "|#"
 
 var1Chars, varChars, con1Chars, conChars :: String
-var1Chars = letterChars
-varChars  = letterChars ++ upperChars ++ digitChars ++ "'-_"
+var1Chars = lowerChars
+varChars  = lowerChars ++ upperChars ++ digitChars ++ "'-_"
 con1Chars = upperChars
 conChars  = varChars
 
 identT :: P String
 identT = identOf con1Chars conChars []
+
+infixT :: P String
+infixT = backquotes identT <|> identC
+
+infixV :: P String
+infixV = backquotes identV <|> identO
 
 identV :: P String
 identV = identOf var1Chars varChars rwsV
@@ -395,6 +405,7 @@ rwsO = [ "->"
        , "<-"
        , ":"
        , "|"
+       , "="
        ]
 
 -- }}}

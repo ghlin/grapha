@@ -1,6 +1,6 @@
 module Lang.Surface where
 
-import           Data.Char                      ( isLetter )
+import           Data.Char                      ( isUpper )
 import           Misc                           ( Name )
 
 -- {{{ 用于表示(Grapha语言中)类型
@@ -229,7 +229,7 @@ fn t1 t2 = TApp (TApp (TCon "->") t1) t2
 
 isConstr :: Name -> Bool
 isConstr "[]" = True
-isConstr n    = isLetter (head n) || (head n == ':') || (head n == '(')
+isConstr n    = isUpper (head n) || (head n == ':') || (head n == '(')
 
 builtinTyConstrs :: [Name]
 builtinTyConstrs = ["Int", "String", "Double", "Char"]
