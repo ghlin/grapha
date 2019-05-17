@@ -33,6 +33,16 @@ import           Misc
 import           Lang.Surface
 import           Lang.Surface.Subst
 
+-- | 为Let分组
+regroupE :: Expression -> Expression
+regroupE = propagateE regroupE'
+
+-- | 为toplevel分组
+regroupCombinators :: [CombinatorDef] -> [[CombinatorDef]]
+regroupCombinators defs =
+  let mkN d@(CombinatorDef name pats body) = mk (fvs body \\ mconcat (fvsP <$> pats)) [name] d
+   in fmap snd <$> re (mkN <$> defs)
+
 type N a = (([Name], [Name]), a)
 -- ((<deps>, <provides>), <payload>)
 
@@ -69,7 +79,4 @@ regroupLetBinding bs body =
 regroupE' :: Expression -> Expression
 regroupE' (ELet bs e) = regroupLetBinding bs e
 regroupE' e           = e
-
-regroupE :: Expression -> Expression
-regroupE = propagateE regroupE'
 
