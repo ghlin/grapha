@@ -1,6 +1,7 @@
 module Lang.Surface where
 
 import           Data.Char                      ( isUpper )
+import           Lang.Literal
 import           Misc                           ( Name )
 
 -- {{{ 用于表示(Grapha语言中)类型
@@ -108,18 +109,6 @@ data Pattern
   | PLit      Literal           -- ^ 字面量
   | PCon      Name    [Pattern] -- ^ 复合的
   | PWildcard                   -- ^ 通配符,Haskell中的`_`
-  deriving (Show, Eq)
-
--- }}}
-
--- {{{ 字面量
-
--- | Literal
-data Literal
-  = LInteger   Int
-  | LDouble    Double -- TODO
-  | LString    String
-  | LChar      Char
   deriving (Show, Eq)
 
 -- }}}

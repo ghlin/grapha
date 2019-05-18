@@ -16,7 +16,10 @@ import           Control.Monad.Trans.Except    as E
 import           Control.Monad.Trans.State     as T
 import           Control.Monad.Trans.Class      ( lift )
 import qualified Lang.Surface                  as S
+import qualified Lang.Literal                  as S
 import           Lang.Core
+import           Lang.Kind
+import           Lang.Type
 import           Misc
 
 class HasKind t where
@@ -326,5 +329,11 @@ inferE ce as (S.EApp l r) = do (ps, tl) <- inferE ce as l
                                -- l r :: b
                                unify tl (tr `fn` t)
                                return (ps <> qs, t)
+inferE ce as (S.EIf c t e) = do (ps1, t1) <- inferE ce as c
+                                (ps2, t2) <- inferE ce as t
+                                (ps3, t3) <- inferE ce as e
+                                unify t1 tBool
+                                unify t2 t3
+                                return (ps1 <> ps2 <> ps3 , t1)
 infer ce as (S.ELet bs e) = E.throwE "FIXME: Unimplemented"
 

@@ -123,10 +123,12 @@ runMatch (n:ns) e (CTVar, cs) = do cs'  <- mapM preprocessPat cs
                                    let cs'' = matchPVar n <$> cs'
                                    match ns e cs''
 runMatch (n:ns) e (CTCon, cs) = do alts <- mapM (matchPCons ns e) $ groupCon cs
-                                   let defA = CaseAlternative (PVar n) e
+                                   i <- acquireId
+                                   let defA = CaseAlternative (PVar i) e
                                    return $ ECase (EVar n) (alts <> [defA])
 runMatch (n:ns) e (CTLit, cs) = do alts <- mapM (matchPLit ns e) cs
-                                   let defA = CaseAlternative (PVar n) e
+                                   i <- acquireId
+                                   let defA = CaseAlternative (PVar i) e
                                    return $ ECase (EVar n) (alts <> [defA])
 
 groupCon :: [MatchClause] -> [(Name, [MatchClause])]
@@ -163,7 +165,11 @@ compileE (ELet bs e) = do let (pgs, cgs) = splitLetBindings $ groupLetBindings b
                           e'  <- compileE e
                           return $ ELet (mconcat pgs <> bs') e'
 compileE (EApp l r)   = EApp <$> compileE l <*> compileE r
-compileE (ELam ps e)  = ELam ps <$> compileE e
+compileE (ELam ps e)  = do let arity = length ps
+                           us <- replicateM arity acquireId
+                           e' <- match us pmFail [(ps, e)]
+                           e'' <- compileE e'
+                           return $ ELam (PVar <$> us) e''
 compileE (ECase e as) = ECase <$> compileE e <*> mapM compileA as
 compileE (EIf c t e)  = EIf <$> compileE c <*> compileE t <*> compileE e
 compileE v            = return v

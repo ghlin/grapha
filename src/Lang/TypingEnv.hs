@@ -10,6 +10,8 @@ import           Control.Monad.Trans.Class      ( lift )
 import           Control.Monad                  ( foldM )
 import           Lang.Surface
 import qualified Lang.Core                     as C
+import qualified Lang.Type                     as C
+import           Lang.Kind
 import           Lang.Typing             hiding ( ClassEnv(..)
                                                 , unify
                                                 )
@@ -23,32 +25,32 @@ predname :: Pred -> Name
 predname (Pred n _) = n
 
 type TE a = Either String a
-type KindSubst = [(Name, C.Kind)]
+type KindSubst = [(Name, Kind)]
 
-lookupKind :: Name -> KindSubst -> TE C.Kind
+lookupKind :: Name -> KindSubst -> TE Kind
 lookupKind i ks = case lookup i ks of
                     Just k  -> return k
                     Nothing -> Left $ "Unbound: " <> i <> ", ks: " <> show ks
 
-extendKS :: Name -> C.Kind -> KindSubst -> TE KindSubst
+extendKS :: Name -> Kind -> KindSubst -> TE KindSubst
 extendKS n k ks = case lookup n ks of
                     Nothing -> return $ (n, k):ks
                     Just k' -> if k == k' then return ks else Left $ "Kind mismatch: " <> n
 
 -- | 断言:Type具有Kind: KStar
 fromType :: KindSubst -> KindSubst -> Type -> TE KindSubst
-fromType cks vks = fromType' cks vks C.KStar
+fromType cks vks = fromType' cks vks KStar
 
-fromType' :: KindSubst -> KindSubst -> C.Kind -> Type -> TE KindSubst
+fromType' :: KindSubst -> KindSubst -> Kind -> Type -> TE KindSubst
 fromType' cks vks k t = fromTypes cks vks k $ flatten t
 
 -- | [Type]由某个Type经过flatten得到,这里断言那个Type具有给定的Kind
 -- 在这个假设之下,推断Type内部符号的Kind
-fromTypes :: KindSubst -> KindSubst -> C.Kind -> [Type] -> TE KindSubst
+fromTypes :: KindSubst -> KindSubst -> Kind -> [Type] -> TE KindSubst
 fromTypes cks = syn
-  where syn  vks k (TVar f:rs) = do let ks' = replicate (length rs) C.KStar
+  where syn  vks k (TVar f:rs) = do let ks' = replicate (length rs) KStar
                                     vks' <- synthsis cks vks ks' rs
-                                    let k' = foldr C.KFun k ks'
+                                    let k' = foldr KFun k ks'
                                     extendKS f k' vks'
         syn  vks k [TCon c]    = do k' <- lookupKind c cks
                                     if k /= k'
@@ -57,13 +59,13 @@ fromTypes cks = syn
         syn  vks k (TCon c:rs) = do ck <- lookupKind c cks
                                     let ks' = flattenK' ck
                                     vks' <- synthsis cks vks ks' rs
-                                    k' <- C.applyKs ck ks'
+                                    k' <- applyKs ck ks'
                                     if k /= k'
                                        then Left $ "Kind mismatch: " <> show k <> " / " <> show k'
                                        else return vks'
 
 -- | 合成ts 和 ks
-synthsis :: KindSubst -> KindSubst -> [C.Kind] -> [Type] -> TE KindSubst
+synthsis :: KindSubst -> KindSubst -> [Kind] -> [Type] -> TE KindSubst
 synthsis _ _ ks ts | length ks /= length ts = Left $ "Kind mismatch (length differ)\n" <> "l: " <> show ks <> "\nr: " <> show ts
 synthsis cks vks ks ts                      = s $ ks `zip` ts
   where s              = foldM syn vks
@@ -80,7 +82,7 @@ fromProd ks vs (ProductDef _ ts) = do vks <- foldM ft [] ts
 dataTypeKinds :: KindSubst -> DataTypeDef -> TE KindSubst
 dataTypeKinds ks (DataTypeDef name as ps) = do as' <- mconcat <$> mapM (fromProd ks as) ps
                                                kas <- mapM (`lookupKind` as') as
-                                               extendKS name (foldr C.KFun C.KStar kas) ks
+                                               extendKS name (foldr KFun KStar kas) ks
 
 fromPred :: KindSubst -> KindSubst -> Pred -> TE KindSubst
 fromPred cks vks (Pred i t) = do k <- lookupKind i cks
@@ -89,7 +91,7 @@ fromPred cks vks (Pred i t) = do k <- lookupKind i cks
 fromAnnot :: Name -> KindSubst -> KindSubst -> CombinatorAnnot -> TE KindSubst
 fromAnnot v cks vks (CombinatorAnnot _ (Qual ps t)) = do vks' <- foldM (fromPred cks) vks ps
                                                          -- t is of kind *
-                                                         vks'' <- fromType' cks vks' C.KStar t
+                                                         vks'' <- fromType' cks vks' KStar t
                                                          return $ filter ((== v) . fst) vks''
 
 classKinds :: KindSubst -> TypeClassDef -> TE KindSubst
@@ -108,11 +110,11 @@ flatten :: Type -> [Type]
 flatten (TApp l r) = flatten l <> [r]
 flatten v          = [v]
 
-flattenK :: C.Kind -> [C.Kind]
-flattenK (C.KFun l r) = [l] <> flattenK r
+flattenK :: Kind -> [Kind]
+flattenK (KFun l r) = [l] <> flattenK r
 flattenK k            = [k]
 
-flattenK' :: C.Kind -> [C.Kind]
+flattenK' :: Kind -> [Kind]
 flattenK' = init . flattenK
 
 translatePred :: KindSubst -> KindSubst -> Pred -> TE C.Pred
@@ -126,7 +128,7 @@ translateType' cks vks = t
         t (TCon c)   = C.TCon . C.TyCon c <$> lookupKind c cks
         t (TVar v)   = C.TVar . C.TyVar v <$> lookupKind v vks
 
-translateType :: KindSubst -> KindSubst -> C.Kind -> Type -> TE C.Ty
+translateType :: KindSubst -> KindSubst -> Kind -> Type -> TE C.Ty
 translateType cks vks k t = do vks' <- fromType' cks vks k t
                                translateType' cks vks' t
 
@@ -170,12 +172,12 @@ topoDatatypeDefs dtds =
 
 -- | default bindings
 initialSubsts :: KindSubst
-initialSubsts = [ ("Int", C.KStar)
-                , ("String", C.KStar)
-                , ("Double", C.KStar)
-                , ("Char", C.KStar)
-                , ("()", C.KStar)
-                , ("->", C.fromArity 2)
-                , ("[]", C.fromArity 1)
-                ] <> [ (tupleCon n, C.fromArity n) | n <- [2..4] ]
+initialSubsts = [ ("Int", KStar)
+                , ("String", KStar)
+                , ("Double", KStar)
+                , ("Char", KStar)
+                , ("()", KStar)
+                , ("->", fromArity 2)
+                , ("[]", fromArity 1)
+                ] <> [ (tupleCon n, fromArity n) | n <- [2..4] ]
 

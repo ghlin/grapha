@@ -12,6 +12,7 @@ import           Text.Megaparsec.Char    hiding ( string )
 import qualified Text.Megaparsec.Char.Lexer    as L
 
 import           Lang.Surface
+import           Lang.Literal
 import           ParserHelper                  as H
 import           Misc                           ( singleton, Name, tupleCon )
 
