@@ -1,5 +1,6 @@
 module Misc
   ( Name
+  , ErrorMessage
   , singleton
   , tupleCon
   , split
@@ -10,6 +11,8 @@ module Misc
 import           Control.Monad                  ( guard )
 
 type Name = String
+
+type ErrorMessage = String
 
 singleton :: a -> [a]
 singleton = (:[])

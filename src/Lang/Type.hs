@@ -1,32 +1,30 @@
-module Lang.Type
-where
+module Lang.Type where
 
-import           Lang.Kind
+import           Data.List                      ( union )
 import           Misc
 
-data TyVar = TyVar Name Kind deriving (Show, Eq)
-data TyCon = TyCon Name Kind deriving (Show, Eq)
+data Scheme     = Forall [Name] Type deriving (Show, Eq)
 
-data Pred   = Pred Name   Ty      deriving (Show, Eq)
-data Qual t = Qual [Pred] t       deriving (Show, Eq)
-data Sc     = Sc [Kind] (Qual Ty) deriving (Show, Eq)
-
-data Ty
-  = TVar TyVar
-  | TCon TyCon
-  | TApp Ty Ty
-  | TGen Int
+data Type
+  = TVar Name        -- ^ 类型变量
+  | TCon Name        -- ^ 类型构造器(名)
+  | TApp Type Type   -- ^ 应用
   deriving (Show, Eq)
 
-tInt, tString, tUnit :: Ty
-tInt    = TCon $ TyCon "Int" KStar
-tString = TCon $ TyCon "String" KStar
-tUnit   = TCon $ TyCon "()" KStar
-tBool   = TCon $ TyCon "Bool" KStar
-tFun    = TCon $ TyCon "()" $ fromArity 2
+tInt, tString, tBool, tUnit, tFun :: Type
+tInt    = TCon "Int"
+tString = TCon "String"
+tBool   = TCon "Bool"
+tUnit   = TCon "()"
+tFun    = TCon "->"
 
-tTupleCon :: Int -> Ty
-tTupleCon n = TCon $ TyCon (tupleCon n) $ fromArity n
+tTupleCon :: Int -> Type
+tTupleCon n = TCon $ tupleCon n
 
-fn :: Ty -> Ty -> Ty
+fn :: Type -> Type -> Type
 fn a b = TApp (TApp tFun a) b
+
+tFVs :: Type -> [Name]
+tFVs (TVar n  ) = [n]
+tFVs (TApp l r) = tFVs l `union` tFVs r
+tFVs _          = []

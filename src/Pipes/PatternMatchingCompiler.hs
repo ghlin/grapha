@@ -1,18 +1,18 @@
-module Lang.Surface.PatternMatchCompiler
-  ( compileProgram
+module Pipes.PatternMatchingCompiler
+  ( compilePatternMatching
   ) where
 
 import qualified Control.Monad.Trans.State     as T
 import           Control.Monad
 import           Lang.Surface
 import           Lang.Surface.Subst
+import           Lang.Builtins
 import           Misc
-
-import Debug.Trace
+import           Pipe
 
 -- | 编译prog内所有定义的多组pattern match到一个单独的定义(其body是一个ECase)
-compileProgram :: Program -> Program
-compileProgram p = T.evalState (compileP p) $ PMCState 0 (dataTypeDefs p)
+compilePatternMatching :: Pipe ErrorMessage Program Program
+compilePatternMatching p = Right $ T.evalState (compileP p) $ PMCState 0 (dataTypeDefs p)
 
 groupToplevelBindings :: [CombinatorDef] -> [[CombinatorDef]]
 groupToplevelBindings = g [] [] Nothing
@@ -43,7 +43,7 @@ fromCombinatorDef :: CombinatorDef -> LetBinding
 fromCombinatorDef (CombinatorDef f ps e) = LetBinding (CombinatorBinding f ps) e
 
 pmFail :: Expression
-pmFail = EVar "undefined"
+pmFail = EVar missingCaseVarName
 
 type MatchClause = ([Pattern], Expression)
 data ClauseType = CTVar | CTCon | CTLit deriving (Show, Eq)
@@ -177,12 +177,8 @@ compileE v            = return v
 compileA :: CaseAlternative -> M CaseAlternative
 compileA (CaseAlternative p e) = CaseAlternative p <$> compileE e
 
-compileI :: InstanceDef -> M InstanceDef
-compileI (InstanceDef name ps ty ds) = InstanceDef name ps ty <$> compileC ds
-
 compileP :: Program -> M Program
-compileP p = do let ids = instanceDefs  p
-                let cds = combinatorDefs p
+compileP p = do let cds = combinatorDefs p
                 cds' <- compileC cds
-                ids' <- mapM compileI ids
-                return $ p { instanceDefs = ids', combinatorDefs = cds' }
+                return $ p { combinatorDefs = cds' }
+

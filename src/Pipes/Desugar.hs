@@ -1,17 +1,10 @@
-module Lang.Surface.Desugar
+module Pipes.Desugar
   ( desugar
-  , desugarE
   ) where
 
 import           Lang.Surface
-import           Misc                           ( tupleCon )
-
-desugarS :: [DoStmt] -> Expression
-desugarS [DoBind Nothing exp]         = desugarE exp
-desugarS (DoBind Nothing exp:rest)    = EBinary ">>" exp (desugarS rest)
-desugarS (DoBind (Just pat) exp:rest) = EBinary ">>=" exp $ ELam [pat] $ desugarS rest
-desugarS (DoLetBinding frm exp:rest)  = ELet [LetBinding frm exp] $ desugarS rest
-desugarS _                            = error "empty do"
+import           Misc
+import           Pipe
 
 desugarE :: Expression -> Expression
 desugarE = r
@@ -24,7 +17,6 @@ desugarE = r
     r (ETupleLiteral ts    ) = desugarT $ r <$> ts
     r (EUnary name e       ) = EApp (EVar name) $ r e
     r (EBinary name lhs rhs) = EApp (EApp (EVar name) (r lhs)) (r rhs)
-    r (EDo stmts           ) = r $ desugarS stmts
     r v                      = v
 
 desugarT :: [Expression] -> Expression
@@ -34,7 +26,7 @@ desugarL :: [Expression] -> Expression
 desugarL = foldr cons $ EVar "[]"
   where cons a b = EApp (EApp (EVar "::") a) b
 
-desugar :: HasExpression b => b -> b
-desugar = mapE desugarE
+desugar :: HasExpression b => Pipe ErrorMessage b b
+desugar = Right . mapE desugarE
 
 

@@ -1,33 +1,21 @@
 module Lang.Core where
 
-import           Misc                           ( Name
-                                                , tupleCon
-                                                )
-import           Lang.Kind
 import           Lang.Type
-import qualified Lang.Surface                  as S
-import qualified Lang.Literal                  as S
+import           Lang.Literal
+import           Misc
 
-data Pat
-  = PLit Ty S.Literal
-  | PVar Ty Name
-  | PWildcard
-  | PCon Ty [Pat]
+data CoreCombinator
+  = CoreCombinator Name [Name] CoreExpr
   deriving (Show, Eq)
 
-data Expr
-  = ELit  Ty  S.Literal
-  | EVar  Sc  Name
-  | ELam  Sc  [Alt] Expr
-  | EApp      Expr  Expr
-  | EIf       Expr  Expr Expr
-  | ELet      [Alt] Expr
-  | ECase     Expr  [Alt]
+data CoreExpr
+  = ELit  Literal
+  | EVar  Name
+  | ELam  [Name]   CoreExpr
+  | EApp  CoreExpr CoreExpr
+  | EIf   CoreExpr CoreExpr CoreExpr
+  | ELet  [CoreCombinator]  CoreExpr
+  | ETest Name     CoreExpr  -- ^ only the value constructor
+  | EPick Name Int CoreExpr
   deriving (Show, Eq)
-
-data Alt
-  = Alt Name Sc Expr
-  deriving (Show, Eq)
-
-
 

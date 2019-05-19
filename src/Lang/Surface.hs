@@ -2,26 +2,8 @@ module Lang.Surface where
 
 import           Data.Char                      ( isUpper )
 import           Lang.Literal
+import           Lang.Type
 import           Misc                           ( Name )
-
--- {{{ 用于表示(Grapha语言中)类型
-
--- | Type
-data Type
-  = TVar Name        -- ^ 类型变量
-  | TCon Name        -- ^ 类型构造器(名)
-  | TApp Type Type   -- ^ 应用
-  deriving (Show, Eq)
-
--- | 经qualified某物(Type/Scheme), 比如 (Num a, Show b) => SomeThing a -> b
-data Qual t  = Qual [Pred] t
-  deriving (Show, Eq)
-
--- | Prediction, 如 Num a, Show b
-data Pred = Pred Name Type
-  deriving (Show, Eq)
-
--- }}}
 
 -- {{{ 用于表示(Grapha语言中)数据结构
 
@@ -34,20 +16,6 @@ data ProductDef
 data DataTypeDef
   = DataTypeDef Name [Name] [ProductDef]
   deriving (Show, Eq)
--- }}}
-
--- {{{ typeclass和instance定义
-
--- | typeClass定义
-data TypeClassDef
-  = TypeClassDef Name [Pred] Name [CombinatorAnnot]
-  deriving (Show, Eq)
-
--- | instance定义
-data InstanceDef
-  = InstanceDef  Name [Pred] Type [CombinatorDef]
-  deriving (Show, Eq)
-
 -- }}}
 
 -- {{{ 表达式
@@ -63,7 +31,6 @@ data Expression
   | ECase            Expression [CaseAlternative]      -- ^ 模式匹配
   | ELet             [LetBinding] Expression           -- ^ let 绑定
   -- 以下仅在CST中出现,后续可以被转换为上面几种更简单的形式(多为语法糖)
-  | EDo              [DoStmt]                          -- ^ do-notation
   | EUnary           Name Expression                   -- ^ 一元前缀运算
   | EBinary          Name Expression Expression        -- ^ 二元中缀运算
   | EListLiteral     [Expression]                      -- ^ 列表字面量
@@ -77,11 +44,6 @@ data LetBinding
   = LetBinding LetBindingForm Expression -- ^ 绑定
   deriving (Show, Eq)
 
--- | 对某个名字的注解
-data Annotation
-  = Annotation Name (Qual Type)
-  deriving (Show, Eq)
-
 -- | Let绑定的形式
 data LetBindingForm
   = PatternBinding    Pattern            -- ^ 绑定某个pattern
@@ -91,12 +53,6 @@ data LetBindingForm
 -- | case分支
 data CaseAlternative
   = CaseAlternative Pattern Expression
-  deriving (Show, Eq)
-
--- | do-记法中的绑定
-data DoStmt
-  = DoBind          (Maybe Pattern) Expression -- ^ pattern <- expr
-  | DoLetBinding    LetBindingForm  Expression -- ^ let ... = expr
   deriving (Show, Eq)
 
 -- }}}
@@ -120,11 +76,6 @@ data CombinatorDef
   = CombinatorDef Name [Pattern] Expression
   deriving (Show, Eq)
 
--- | Combinator的类型注解
-data CombinatorAnnot
-  = CombinatorAnnot Name (Qual Type)
-  deriving (Show, Eq)
-
 -- | (二元)中缀运算符的优先级和结合性声明
 -- 优先级越高表示结合越紧密
 -- 若某个运算符无此声明,则默认为左结合和优先级5
@@ -142,11 +93,8 @@ data InfixAssoc
 -- | Toplevel definition
 data ToplevelDef
   = ToplevelCombinatorDef   CombinatorDef   -- ^ 组合子/中缀运算符定义
-  | ToplevelCombinatorAnnot CombinatorAnnot -- ^ 组合子/中缀运算符类型注解
   | ToplevelInfixDef        InfixDef        -- ^ 中缀运算符结合性/优先级定义
   | ToplevelDataTypeDef     DataTypeDef     -- ^ ADT定义
-  | ToplevelTypeClassDef    TypeClassDef    -- ^ 类型类定义
-  | ToplevelInstanceDef     InstanceDef     -- ^ 实例定义
   deriving (Show, Eq)
 
 -- }}}
@@ -156,10 +104,7 @@ data ToplevelDef
 -- | program由许多Toplevel定义组成
 data Program
   = Program
-    { typeClassDefs    :: [TypeClassDef]
-    , instanceDefs     :: [InstanceDef]
-    , combinatorDefs   :: [CombinatorDef]
-    , combinatorAnnots :: [CombinatorAnnot]
+    { combinatorDefs   :: [CombinatorDef]
     , dataTypeDefs     :: [DataTypeDef]
     , infixDefs        :: [InfixDef]
     }
@@ -175,7 +120,6 @@ propagateE f (ECase e alts)     = f $ ECase (propagateE f $ f e) $ mapE (propaga
 propagateE f (EApp l r)         = f $ EApp (propagateE f $ f l) (propagateE f $ f r)
 propagateE f (EIf c t e)        = f $ EIf (propagateE f $ f c) (propagateE f $ f t) (propagateE f $ f e)
 propagateE f (ELam ps e)        = f $ ELam ps $ propagateE f $ f e
-propagateE f (EDo ss)           = f $ EDo $ mapE (propagateE f) <$> ss
 propagateE f (EUnary n e)       = f $ EUnary n $ propagateE f $ f e
 propagateE f (EBinary n l r)    = f $ EBinary n (propagateE f $ f l) (propagateE f $ f r)
 propagateE f (EListLiteral es)  = f $ EListLiteral $ propagateE f <$> (f <$> es)
@@ -190,28 +134,19 @@ class HasExpression f where
 instance HasExpression LetBinding where
   mapE f (LetBinding fm e) = LetBinding fm $ f e
 
-instance HasExpression DoStmt where
-  mapE f (DoBind p e)       = DoBind p $ f e
-  mapE f (DoLetBinding p e) = DoLetBinding p $ f e
-
 instance HasExpression CaseAlternative where
   mapE f (CaseAlternative p e) = CaseAlternative p $ f e
 
 instance HasExpression CombinatorDef where
   mapE f (CombinatorDef n p e) = CombinatorDef n p $ f e
 
-instance HasExpression InstanceDef where
-  mapE f (InstanceDef n p t c) = InstanceDef n p t $ mapE f <$> c
-
 instance HasExpression ToplevelDef where
   mapE f (ToplevelCombinatorDef x) = ToplevelCombinatorDef $ mapE f x
-  mapE f (ToplevelInstanceDef   x) = ToplevelInstanceDef   $ mapE f x
   mapE _ x                         = x
 
 instance HasExpression Program where
-  mapE f prog = let ids = mapE f <$> instanceDefs prog
-                    cds = mapE f <$> combinatorDefs prog
-                 in prog { instanceDefs = ids, combinatorDefs = cds }
+  mapE f prog = let cds = mapE f <$> combinatorDefs prog
+                 in prog { combinatorDefs = cds }
 
 fn :: Type -> Type -> Type
 fn t1 t2 = TApp (TApp (TCon "->") t1) t2

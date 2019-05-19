@@ -1,9 +1,10 @@
-module Lang.Surface.Balancer
+module Pipes.Balancer
   ( balance
   ) where
 
 import           Lang.Surface
 import           Misc
+import           Pipe
 
 type InfixDatabase = [(Name, (InfixAssoc, Int))]
 
@@ -29,7 +30,6 @@ balance' db = r
     r (ECase e as       ) = EIndir $ ECase (r e) $ mapE r <$> as
     r (EIf c t e        ) = EIndir $ EIf (r c) (r t) (r e)
     r (ELet bs e        ) = EIndir $ ELet (mapE r <$> bs) (r e)
-    r (EDo ss           ) = EIndir $ EDo $ mapE r <$> ss
     r (EUnary n e       ) = EIndir $ EUnary n $ r e
     r (EListLiteral  es ) = EIndir $ EListLiteral $ r <$> es
     r (ETupleLiteral es ) = EIndir $ ETupleLiteral $ r <$> es
@@ -48,7 +48,6 @@ simplify (EApp  p e       ) = EApp (simplify p) (simplify e)
 simplify (ECase e as      ) = ECase (simplify e) $ mapE simplify <$> as
 simplify (EIf c t e       ) = EIf (simplify c) (simplify t) (simplify e)
 simplify (ELet bs e       ) = ELet (mapE simplify <$> bs) (simplify e)
-simplify (EDo ss          ) = EDo $ mapE simplify <$> ss
 simplify (EUnary n e      ) = EUnary n $ simplify e
 simplify (EBinary n l r   ) = EBinary n (simplify l) (simplify r)
 simplify (EListLiteral  es) = EListLiteral $ simplify <$> es
@@ -57,8 +56,13 @@ simplify e                  = e
 
 -- | 先前parsing的过程将所有二元运算符看做了左结合,优先级5
 -- 在这里把二元运算的结合顺序恢复为正确的顺序
-balance :: [InfixDef] -> Expression -> Expression
-balance ids = simplify . balance' (translateDB ids)
+balance :: Pipe ErrorMessage Program  Program
+balance prog = let ifs = infixDefs prog
+                in Right $ mapE (balanceE ifs) prog
+
+balanceE :: [InfixDef] -> Expression -> Expression
+balanceE ids = simplify . balance' (translateDB ids)
   where translateDB                          = fmap translate
         translate (InfixDef name prec assoc) = (name, (assoc, prec))
+
 

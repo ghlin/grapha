@@ -8,8 +8,6 @@ module Lang.Surface.Subst
   ) where
 
 import           Data.List                      ( union
-                                                , intersect
-                                                , nub
                                                 , (\\)
                                                 )
 import           Misc

@@ -1,31 +1,45 @@
 {-# LANGUAGE TupleSections #-}
-module Lang.Surface.Parser
-  ( parser
+
+module Pipes.Parser
+  ( parse
+  , Source (..)
   ) where
 
 import           Control.Monad                  ( void, when, (>=>) )
 import           Control.Monad.Combinators.Expr
 import           Data.Functor                   ( ($>) )
 import           Data.Maybe                     ( isJust )
-import           Text.Megaparsec
+import           Text.Megaparsec         hiding ( parse )
+import           Text.Megaparsec.Error          ( errorBundlePretty )
 import           Text.Megaparsec.Char    hiding ( string )
 import qualified Text.Megaparsec.Char.Lexer    as L
-
 import           Lang.Surface
 import           Lang.Literal
+import           Lang.Type                     as T
 import           ParserHelper                  as H
-import           Misc                           ( singleton, Name, tupleCon )
+import           Lang.Builtins
+import           Misc
+import           Pipe
 
 -- {{{
+
+data Source
+  = Source
+    { sourceFileName    :: String
+    , sourceFileContent :: String
+    }
+
+parse :: Pipe ErrorMessage Source Program
+parse (Source name src) =
+  case runParser parser name src of
+    Left e  -> Left $ errorBundlePretty e
+    Right p -> return p
 
 parser :: P Program
 parser = organize <$> between scn eof (many $ lexemeN toplevel)
   where organize = foldl pick prog
-        prog = Program [] [] [] [] [] []
-        pick p (ToplevelTypeClassDef    d) = p { typeClassDefs    = typeClassDefs    p <> [d] }
-        pick p (ToplevelInstanceDef     d) = p { instanceDefs     = instanceDefs     p <> [d] }
+        prog = Program [] [] []
         pick p (ToplevelCombinatorDef   d) = p { combinatorDefs   = combinatorDefs   p <> [d] }
-        pick p (ToplevelCombinatorAnnot d) = p { combinatorAnnots = combinatorAnnots p <> [d] }
         pick p (ToplevelDataTypeDef     d) = p { dataTypeDefs     = dataTypeDefs     p <> [d] }
         pick p (ToplevelInfixDef        d) = p { infixDefs        = infixDefs        p <> [d] }
 -- }}}
@@ -47,11 +61,11 @@ literal = LString  <$> lexeme H.string
 
 -- | type? typing!
 typing :: P Type
-typing = foldl1 fn <$> termT `sepBy1` symbol "->"
+typing = foldl1 T.fn <$> termT `sepBy1` arrowR
 
 -- | like typing, but doesn't probe type application
 typing' :: P Type
-typing' = foldl1 fn <$> termT' `sepBy1` symbol "->"
+typing' = foldl1 T.fn <$> termT' `sepBy1` arrowR
 
 varT :: P Type
 varT = TVar <$> identV
@@ -76,16 +90,6 @@ termT = listT <|> ((varT <|> conT) >>= probe) <|> try tupleT <|> (parens typing 
 
 termT' :: P Type
 termT' = listT <|> (varT <|> conT) <|> try tupleT <|> parens typing
-
--- | Qual
-qual :: P (Qual Type)
-qual = Qual <$> fallback' [] (predsQ <* fatArrowR) <*> typing
-
-predi :: P Pred
-predi = Pred <$> identT <*> typing
-
-predsQ :: P [Pred]
-predsQ = braces (predi `sepBy1` comma) <|> singleton <$> predi
 
 -- }}}
 
@@ -139,7 +143,7 @@ termP' = litP <|> varP <|> conP' <|> wildcardP <|> listP <|> try tupleP <|> pare
 
 -- | expression parser
 expr :: P Expression
-expr = ifE <|> doE <|> try letE <|> caseE <|> lamE <|> expr'
+expr = ifE <|> try letE <|> caseE <|> lamE <|> expr'
 
 litE :: P Expression
 litE = ELit <$> literal
@@ -192,19 +196,6 @@ combinatorBindingFormB = do
   (name, pats) <- combinatorLHS
   return $ CombinatorBinding name pats
 
-doE :: P Expression
-doE = EDo <$> (symbol "do" *> someAligned doStmtS)
-
-doLetS :: P DoStmt
-doLetS = symbol "let" *> (DoLetBinding <$> letBindingFormB <*> (equalsign *> expr))
-
-doBindS :: P DoStmt
-doBindS = optional (try $ pattern_ <* arrowL) >>= probe
-  where probe mpat = DoBind mpat <$> expr
-
-doStmtS :: P DoStmt
-doStmtS = doLetS <|> doBindS
-
 listLiteralE :: P Expression
 listLiteralE = EListLiteral <$> brackets (expr `sepBy` comma)
 
@@ -249,9 +240,6 @@ expr' = do
 toplevel :: P ToplevelDef
 toplevel = (ToplevelInfixDef        <$> infixDef)
        <|> (ToplevelDataTypeDef     <$> dataTypeDef)
-       <|> (ToplevelTypeClassDef    <$> typeClassDef)
-       <|> (ToplevelInstanceDef     <$> instanceDef)
-       <|> (ToplevelCombinatorAnnot <$> try combinatorAnnot)
        <|> (ToplevelCombinatorDef   <$> combinatorDef)
 
 -- | infix[l|r] <prece> <op>
@@ -287,12 +275,6 @@ combinatorDef = do
   body <- equalsign *> expr
   return $ CombinatorDef name args body
 
--- | combinator annotation
--- main : IO ()
-combinatorAnnot :: P CombinatorAnnot
-combinatorAnnot = CombinatorAnnot <$> combinatorNameC
-                                  <*> ofTypeAssertion
-
 -- | data type
 dataTypeDef :: P DataTypeDef
 dataTypeDef = do
@@ -308,37 +290,6 @@ dataTypeDef = do
 
 productD :: P ProductDef
 productD = ProductDef <$> identT <*> many termT'
-
--- | typeClass [ <preds> => ] <name> <arg>
---     <member-defs>
-typeClassDef :: P TypeClassDef
-typeClassDef = do
-  symbol "typeclass"
-  (preds, name, arg) <- try full <|> simple
-  members <- aligned $ \ref ->
-    combinatorAnnot `sepBy1` try (scn *> indented ref (return ()))
-  return $ TypeClassDef name preds arg members
-  where full = (,,) <$> predsQ <* fatArrowR <*> identT <*> identV
-        simple = ([],,) <$> identT <*> identV
-
--- | instance [ <preds> => ] <name> <type>
-instanceDef :: P InstanceDef
-instanceDef = do
-  symbol "instance"
-  (preds, name, ty) <- try full <|> simple
-  members <- aligned $ \ref ->
-    combinatorDef `sepBy1` try (scn *> indented ref (return ()))
-  return $ InstanceDef name preds ty members
-  where full   = (,,) <$> predsQ <* fatArrowR <*> identT <*> typing
-        simple = ([],,) <$> identT <*> typing
-
--- | `of type` assertion
-ofTypeAssertion :: P (Qual Type)
-ofTypeAssertion = colon >> qual
-
--- | `<symbol> : <type>` assertion
-annotation :: P Annotation
-annotation = Annotation <$> identV <*> ofTypeAssertion
 
 -- }}}
 
@@ -392,8 +343,6 @@ rwsV = [ "let"
        , "of"
        , "with"
        , "type"
-       , "instance"
-       , "typeclass"
        , "where"
        , "infix"
        , "infixl"

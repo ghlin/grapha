@@ -1,87 +1,67 @@
-{-# LANGUAGE TupleSections #-}
 module Main where
 
-import           Debug.Trace
-import           Control.Applicative            ( (<|>) )
-import           Control.Monad                  ( forM_
-                                                , (>=>)
-                                                , foldM
-                                                )
-import           System.Environment             ( getArgs )
-import           Text.Megaparsec                ( runParser )
-import           Text.Megaparsec.Error          ( errorBundlePretty )
-import           Text.Pretty.Simple             ( pPrint )
-
-import qualified Lang.Typing                   as Ty
-import qualified Lang.TypingEnv                as TE
-import qualified Lang.Surface                  as S
-import           Lang.Simpl.Translator
+import           Text.Pretty.Simple
+import           Control.Monad
+import           System.Environment
+import           Pipes.Parser
+import           Pipes.Balancer
+import           Pipes.Desugar
+import           Pipes.PatternMatchingCompiler
+import           Pipes.CaseExpander
+import           Pipes.Grouper
+import           Pipes.Translator
+import           Pipes.ConstrCollector
+import           Pipes.TypeChecker
+import           Lang.Surface
 import           Lang.Core
-import           Lang.Kind
-import           Lang.Surface.Balancer
-import           Lang.Surface.Renamer
-import           Lang.Surface.Grouper
-import           Lang.Surface.Desugar
-import           Lang.Surface.PatternMatchCompiler
-import           Lang.Surface.CaseLineariser
-import           Lang.Surface.Parser            ( parser )
-import           ParserHelper
+import           Lang.Type
+import           Pipe
 import           Misc
 
-printMany :: Show a => [a] -> IO ()
-printMany = mapM_ $ (>> putStrLn "==================") . pPrint
+import Debug.Trace
 
-kinds :: [S.DataTypeDef] -> [S.TypeClassDef] -> Either String TE.KindSubst
-kinds ds is = do
-  ds' <- TE.topoDatatypeDefs ds
-  s1  <- foldM TE.dataTypeKinds TE.initialSubsts ds'
-  is' <- TE.topoClassDefs is
-  foldM TE.classKinds s1 is'
+progromPipes :: Pipe ErrorMessage Source Program
+progromPipes = parse
+           >=> balance
+           >=> desugar
+           >=> trace "compilepm"  compilePatternMatching
+           >=> trace "expandcase" expand
 
-classes :: TE.KindSubst -> [S.TypeClassDef] -> Either String [TE.ClassDef]
-classes = mapM . TE.translateClassDef
+corePipes :: Pipe ErrorMessage Program [[CoreCombinator]]
+corePipes = trace "regroup"   regroup
+        >=> trace "translate" mapM translate
 
-insts :: TE.KindSubst -> [S.InstanceDef] -> Either String [TE.InstDef]
-insts = mapM . TE.translateInstDef
+constrPipes :: Pipe ErrorMessage Program ConstrsTable
+constrPipes = collectConstrs . dataTypeDefs
 
-types :: TE.KindSubst -> [S.DataTypeDef] -> Either String [(Name, Kind)]
-types ks = mapM k
-  where k (S.DataTypeDef name _ _) = (name, ) <$> TE.lookupKind name ks
+pipe :: Pipe ErrorMessage Source (ConstrsTable, [[CoreCombinator]], Program)
+pipe s = do p <- progromPipes s
+            ts <- constrPipes p
+            cs <- corePipes p
+            return (ts, cs, p)
 
-printAll :: S.Program -> IO ()
-printAll p = case result of
-               Left err -> print err
-               Right (cls, ins, tys) -> do
-                 putStrLn "==========classes============"
-                 printMany cls
-                 putStrLn "==========insts=============="
-                 printMany ins
-                 putStrLn "==========insts=============="
-                 printMany tys
-             where result = do let ds = S.dataTypeDefs p
-                               let is = S.instanceDefs p
-                               let cs = S.typeClassDefs p
-                               k <- kinds ds cs
-                               cls <- classes k cs
-                               ins <- insts k is
-                               tys <- types k ds
-                               return (cls, ins, tys)
-
-compile :: S.Program -> S.Program
-compile p = let ixs = S.infixDefs p
-             in linearise $ S.mapE regroupE $ compileProgram $ desugar $ S.mapE (balance ixs) p
+tiDemoPipe :: Pipe ErrorMessage Source (Program, [[CoreCombinator]],  [(Type, Subst)])
+tiDemoPipe s = do p <- progromPipes s
+                  trace ("p: " <> show p) $ return ()
+                  ct <- constrPipes p
+                  trace ("=================") $ return ()
+                  trace (show ct) $ return ()
+                  grs <- regroup p
+                  trace ("grs=================") $ return ()
+                  trace (unlines $ show <$> grs) $ return ()
+                  css <- mapM translate grs
+                  trace ("=================") $ return ()
+                  trace (unlines $ show <$> css) $ return ()
+                  let cs = head <$> filter (not . null) css
+                  tys <- mapM (infer ct) cs
+                  return (p, css, tys)
 
 main :: IO ()
 main = do
   [srcFile] <- getArgs
   srcContent <- readFile srcFile
-  case runParser parser srcFile srcContent of
-    Left e -> putStrLn $ errorBundlePretty e
-    Right p -> do
-      let p' = compile p
-      let cds = S.combinatorDefs p'
-      pPrint $ translateC <$> cds
-      -- pPrint p'
-      -- pPrint p'
-      -- printAll p'
+  case tiDemoPipe (Source srcFile srcContent) of
+    Left e -> putStrLn e
+    Right a -> pPrint a
+                         -- mapM_ pPrint tys
 

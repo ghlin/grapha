@@ -1,3 +1,13 @@
+module Pipes.Grouper
+  ( regroup
+  ) where
+
+import           Data.List                      ( (\\) )
+import           Lang.Surface
+import           Lang.Surface.Subst
+import           Misc
+import           Pipe
+
 {--- | 为Let和CombinatorDefs重新分组, 使得每一组仅依赖组内和/或之前组的定义
  ---
  --- 例如:
@@ -21,20 +31,13 @@
  ---     in ...
  ---
  ---}
-module Lang.Surface.Grouper
-  ( regroupE
-  , regroupCombinators
-  ) where
-
-import           Debug.Trace
-import           Data.List                      ( (\\) )
-import           Misc
-import           Lang.Surface
-import           Lang.Surface.Subst
+regroup :: Pipe ErrorMessage Program [[CombinatorDef]]
+regroup prog = let cds = combinatorDefs prog
+                in Right $ fmap (mapE regroupE) <$> regroupCombinators cds
 
 -- | 为Let分组
 regroupE :: Expression -> Expression
-regroupE = propagateE regroupE'
+regroupE = regroupE'
 
 -- | 为toplevel分组
 regroupCombinators :: [CombinatorDef] -> [[CombinatorDef]]
@@ -76,6 +79,12 @@ regroupLetBinding bs body =
    in foldr ELet body groups
 
 regroupE' :: Expression -> Expression
-regroupE' (ELet bs e) = regroupLetBinding bs e
-regroupE' e           = e
+regroupE' (ELet  bs e   ) = regroupLetBinding bs e
+regroupE' (ECase e  alts) = ECase (regroupE' e) (regroupA <$> alts)
+regroupE' (EApp  l  r   ) = EApp (regroupE' l) (regroupE' r)
+regroupE' (EIf c t e    ) = EIf (regroupE' c) (regroupE' t) (regroupE' e)
+regroupE' (ELam ps e    ) = ELam ps $ regroupE' e
+regroupE' e               = e
 
+regroupA :: CaseAlternative -> CaseAlternative
+regroupA (CaseAlternative p x) = CaseAlternative p $ regroupE' x

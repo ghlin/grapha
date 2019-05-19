@@ -1,9 +1,8 @@
-module Lang.Surface.CaseLineariser
-  ( linearise
+module Pipes.CaseExpander
+  ( expand
   ) where
 
 
-import Debug.Trace
 import           Control.Monad                  ( replicateM
                                                 , foldM
                                                 )
@@ -12,16 +11,16 @@ import           Lang.Surface
 import           Lang.Surface.Subst
 import           Lang.Builtins
 import           Misc
+import           Pipe
 
-linearise :: Program -> Program
-linearise prog = T.evalState (linearise' prog) (LState 0)
+-- | 展开case表达式,使得每个pattern都是简单的
+expand :: Pipe ErrorMessage Program Program
+expand prog = Right $ T.evalState (linearise' prog) (LState 0)
 
 linearise' :: Program -> M Program
 linearise' prog = do let cds = combinatorDefs prog
-                     let ins = instanceDefs   prog
                      cds' <- mapM lrC cds
-                     ins' <- mapM lrI ins
-                     return $ prog { instanceDefs = ins, combinatorDefs = cds' }
+                     return $ prog { combinatorDefs = cds' }
 
 newtype LState
   = LState
@@ -84,7 +83,4 @@ lrB (LetBinding f e) = LetBinding f <$> lrE e
 
 lrC :: CombinatorDef -> M CombinatorDef
 lrC (CombinatorDef name pats body) = CombinatorDef name pats <$> lrE body
-
-lrI :: InstanceDef -> M InstanceDef
-lrI (InstanceDef name preds ty c) = InstanceDef name preds ty <$> mapM lrC c
 
