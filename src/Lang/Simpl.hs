@@ -7,11 +7,11 @@ import           Lang.Literal
 import           Misc
 
 data SimplDataTypeDef
-  = SimplDataTypeDef TyCon [TyVar] [(Name, SimplProductDef)]
+  = SimplDataTypeDef TyCon [Kind] [(Name, SimplProductDef)]
   deriving (Show, Eq)
 
 data SimplProductDef
-  = ProductDef TyCon [Ty]
+  = SimplProductDef TyCon [Ty]
   deriving (Show, Eq)
 
 data SimplTypeClassDef
@@ -29,10 +29,11 @@ data SimplCombinatorDef
 data SimplExpr
   = ELit  Literal
   | EVar  Name
+  | ELam  [Name]     SimplExpr
   | EApp  SimplExpr  SimplExpr
   | EIf   SimplExpr  SimplExpr  SimplExpr
   | ELet  [SimplCombinatorDef]  SimplExpr
-  | ETest Name     SimplExpr  -- ^ only the value constructor
-  | EPick Name Int SimplExpr
+  | ETest Name SimplExpr  -- ^ only the value constructor
+  | EPick Int  SimplExpr
   deriving (Show, Eq)
 
