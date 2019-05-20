@@ -23,7 +23,7 @@ groupToplevelBindings = g [] [] Nothing
                                                           else g (s <> [c]) [d] (Just n) ds
 
 splitLetBindings :: [[LetBinding]] -> ([[LetBinding]], [[LetBinding]])
-splitLetBindings = split (isPatternBinding . head)
+splitLetBindings = split (isPatternBinding . head) . filter (not . null)
   where isPatternBinding (LetBinding PatternBinding {} _) = True
         isPatternBinding _                                = False
 
@@ -91,7 +91,6 @@ lookupProd p = do dts <- T.gets env
                     Nothing    -> fail $ "Missing value constructor: " <> p
 
 match :: [Name] -> Expression -> [MatchClause] -> M Expression
--- match us e ms | trace ("MATCH " <> show us <> ":\n exp = " <> show e <> "\n" <> unlines (show <$> ms)) False = undefined
 match _  _ [([], e)]  = compileE e
 match [] e []         = compileE e
 match ns e cs         = foldM (runMatch ns) e $ reverse $ partition cs

@@ -65,7 +65,7 @@ trA exam (CaseAlternative (PCon con ps) e:rs) = do let vs = unPVar <$> ps
                                                    return $ C.EIf checkE passE failE
 
 trP :: [(Pattern, CoreExpr)] -> M [CoreCombinator]
-trP v | trace (unlines $ show <$> v) False = undefined
+trP []                  = return []
 trP ((PWildcard, e):ps) = trP ps
 trP ((PVar p, e):ps)    = (:) (CoreCombinator p [] e) <$> trP ps
 trP ((PCon c ps, e):rs) = do let vs = unPVar <$> ps
@@ -79,7 +79,6 @@ trP ((PCon c ps, e):rs) = do let vs = unPVar <$> ps
                              return $ bindings <> rs'
 
 trB :: [LetBinding] -> M [CoreCombinator]
-trB v | trace (unlines $ show <$> v) False = undefined
 trB []                                         = return []
 trB (LetBinding (CombinatorBinding n ps) e:bs) = do b   <- CoreCombinator n (unPVar <$> ps) <$> trE e
                                                     bs' <- trB bs
@@ -90,15 +89,15 @@ trB (LetBinding (PatternBinding p) e:bs) = do e' <- trE e
                                               return $ pbs <> bs'
 
 trE :: Expression -> M CoreExpr
-trE (S.ECase exam alts) = trace ("trE0") trA (unEVar exam) alts
-trE (S.ELet  []   f   ) = trace ("trE1") trE f
-trE (S.ELet  bs   e   ) = trace ("trE2") C.ELet <$> trB bs <*> trE e
-trE (S.EIf c t e      ) = trace ("trE3") C.EIf <$> trE c <*> trE t <*> trE e
-trE (S.EApp l  r      ) = trace ("trE4") C.EApp <$> trE l <*> trE r
-trE (S.ELam ps e      ) = trace ("trE5") C.ELam (unPVar <$> ps) <$> trE e
-trE (S.EVar v         ) = trace ("trE6") return $ C.EVar v
-trE (S.ELit l         ) = trace ("trE7") return $ C.ELit l
-trE e                   = trace ("trE8") error "trE : Unexpected expression"
+trE (S.ECase exam alts) = trA (unEVar exam) alts
+trE (S.ELet  []   f   ) = trE f
+trE (S.ELet  bs   e   ) = C.ELet <$> trB bs <*> trE e
+trE (S.EIf c t e      ) = C.EIf <$> trE c <*> trE t <*> trE e
+trE (S.EApp l  r      ) = C.EApp <$> trE l <*> trE r
+trE (S.ELam ps e      ) = C.ELam (unPVar <$> ps) <$> trE e
+trE (S.EVar v         ) = return $ C.EVar v
+trE (S.ELit l         ) = return $ C.ELit l
+trE e                   = error "trE : Unexpected expression"
 
 trC :: CombinatorDef -> M CoreCombinator
 trC (CombinatorDef f ps e) = CoreCombinator f (unPVar <$> ps) <$> trE e

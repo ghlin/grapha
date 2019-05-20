@@ -1,18 +1,27 @@
 module Misc
   ( Name
   , ErrorMessage
+  , isConstr
   , singleton
   , tupleCon
   , split
   , topo
   , topo'
+  , enumIds
   ) where
 
 import           Control.Monad                  ( guard )
+import           Data.Char
 
 type Name = String
 
 type ErrorMessage = String
+
+enumIds :: [Name]
+enumIds = do part <- "":enumIds
+             pend <- ['a' .. 'z']
+             return $ reverse $ pend:part
+
 
 singleton :: a -> [a]
 singleton = (:[])
@@ -44,3 +53,8 @@ topo' = t [] []
                       in if null ok
                             then (res, nope)
                             else t (s <> names ok) (res <> ok) nope
+
+isConstr :: Name -> Bool
+isConstr "[]" = True
+isConstr n    = isUpper (head n) || (head n == ':') || (head n == '(')
+

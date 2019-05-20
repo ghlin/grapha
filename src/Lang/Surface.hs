@@ -16,6 +16,7 @@ data ProductDef
 data DataTypeDef
   = DataTypeDef Name [Name] [ProductDef]
   deriving (Show, Eq)
+
 -- }}}
 
 -- {{{ 表达式
@@ -44,7 +45,7 @@ data LetBinding
   = LetBinding LetBindingForm Expression -- ^ 绑定
   deriving (Show, Eq)
 
--- | Let绑定的形式
+-- | Let绑定的左手部分
 data LetBindingForm
   = PatternBinding    Pattern            -- ^ 绑定某个pattern
   | CombinatorBinding Name    [Pattern]  -- ^ 组合子定义
@@ -150,12 +151,5 @@ instance HasExpression Program where
 
 fn :: Type -> Type -> Type
 fn t1 t2 = TApp (TApp (TCon "->") t1) t2
-
-isConstr :: Name -> Bool
-isConstr "[]" = True
-isConstr n    = isUpper (head n) || (head n == ':') || (head n == '(')
-
-builtinTyConstrs :: [Name]
-builtinTyConstrs = ["Int", "String", "Double", "Char"]
 
 -- }}}

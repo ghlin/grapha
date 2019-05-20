@@ -43,7 +43,7 @@ regroupE = regroupE'
 regroupCombinators :: [CombinatorDef] -> [[CombinatorDef]]
 regroupCombinators defs =
   let mkN d@(CombinatorDef name pats body) = mk (fvs body \\ mconcat (fvsP <$> pats)) [name] d
-   in fmap snd <$> re (mkN <$> defs)
+   in filter (not . null) $ fmap snd <$> re (mkN <$> defs)
 
 type N a = (([Name], [Name]), a)
 -- ((<deps>, <provides>), <payload>)
@@ -76,7 +76,7 @@ regroupLetBinding bs body =
   let mkN b@(LetBinding (PatternBinding p) e)       = ((fvs e, fvsP p), b)
       mkN b@(LetBinding (CombinatorBinding n ps) e) = mk (fvs e \\ mconcat (fvsP <$> ps)) [n] b
       groups                                        = fmap snd <$> re (mkN <$> bs)
-   in foldr ELet body groups
+   in foldr ELet body $ reverse groups
 
 regroupE' :: Expression -> Expression
 regroupE' (ELet  bs e   ) = regroupLetBinding bs e

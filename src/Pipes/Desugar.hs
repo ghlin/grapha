@@ -2,6 +2,7 @@ module Pipes.Desugar
   ( desugar
   ) where
 
+import Debug.Trace
 import           Lang.Surface
 import           Misc
 import           Pipe
@@ -11,6 +12,7 @@ desugarE = r
   where
     r (ELam ps body        ) = ELam ps $ r body
     r (EIf c t e           ) = EIf (r c) (r t) (r e)
+    r (EApp f e            ) = EApp (r f) (r e)
     r (ECase e  alts       ) = ECase (r e) $ mapE r <$> alts
     r (ELet  bs body       ) = ELet (mapE r <$> bs) $ r body
     r (EListLiteral  ts    ) = desugarL $ r <$> ts

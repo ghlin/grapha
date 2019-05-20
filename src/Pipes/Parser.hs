@@ -306,8 +306,8 @@ upperChars  = ['A' .. 'Z']
 digitChars  = ['0' .. '9']
 
 op1Chars, opChars :: String
-op1Chars  = "<+-:~/%&?!.>*=@$|"
-opChars   = op1Chars ++ "|#"
+op1Chars  = "<+-:~/%&?!.>*=@$|#"
+opChars   = op1Chars ++ "|"
 
 var1Chars, varChars, con1Chars, conChars :: String
 var1Chars = lowerChars
