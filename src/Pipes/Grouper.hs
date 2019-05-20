@@ -66,7 +66,7 @@ re nodes = r initialDeps [] nodes
                                                    -- 实际结果应当为     (m, n)    (q)
                                                    -- 但现在会粗略地返回 (m, n, q)
                             (ok, pend) -> let introduced = mconcat $ snd . fst <$> ok
-                                           in r (syms <> introduced) ((singleton <$> ok) <> outs) pend
+                                           in r (syms <> introduced) (outs <> (singleton <$> ok)) pend
 
 mk :: [Name] -> [Name] -> a -> N a
 mk deps provides payload = ((deps \\ provides, provides), payload)
@@ -76,7 +76,7 @@ regroupLetBinding bs body =
   let mkN b@(LetBinding (PatternBinding p) e)       = ((fvs e, fvsP p), b)
       mkN b@(LetBinding (CombinatorBinding n ps) e) = mk (fvs e \\ mconcat (fvsP <$> ps)) [n] b
       groups                                        = fmap snd <$> re (mkN <$> bs)
-   in foldr ELet body $ reverse groups
+   in foldr ELet body groups
 
 regroupE' :: Expression -> Expression
 regroupE' (ELet  bs e   ) = regroupLetBinding bs e

@@ -1,6 +1,8 @@
 module Main where
 
 import           Control.Monad
+import           Data.Text         ( unpack )
+import           Data.Text.Lazy    ( toStrict )
 import           System.Environment
 import           Text.Pretty.Simple
 
@@ -64,6 +66,8 @@ compileSCPipe :: Pipe ErrorMessage Source [GInstr]
 compileSCPipe s = do prog         <- progromPipes s
                      ct           <- constrPipes prog
                      cs           <- mconcat <$> corePipes prog
+                     trace (unpack $ toStrict $ pShow cs) $ return ()
+                     infer ct cs
                      (scs, entry) <- liftCombinators builtins ct cs
                      instrs       <- compileProgram scs
                      let header = [ "Compiled from " <> sourceFileName s
@@ -73,15 +77,6 @@ compileSCPipe s = do prog         <- progromPipes s
                                   [ "------- ------- ------- -------" ]
                      let more   = GComment <$> header
                      return $ more <> [GEntry entry] <> instrs
-
-tiDemoPipe :: Pipe ErrorMessage Source (Program, [[CoreCombinator]],  [(Type, Subst)])
-tiDemoPipe s = do p   <- progromPipes s
-                  ct  <- constrPipes p
-                  grs <- regroup p
-                  css <- mapM translate grs
-                  let cs = head <$> filter (not . null) css
-                  tys <- mapM (infer ct) cs
-                  return (p, css, tys)
 
 main :: IO ()
 main = do

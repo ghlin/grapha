@@ -10,19 +10,22 @@ import           Data.List                     as L
 import           Lang.Type                     as T
 import           Lang.Literal
 import           Lang.Core
+import           Lang.Builtins
 import           Pipes.ConstrCollector
 import           Misc
 import           Pipe
 
 import Debug.Trace
 
-infer :: ConstrsTable -> Pipe ErrorMessage CoreCombinator (Type, Subst)
-infer cs (CoreCombinator _ [] body) = runTI cs $ do ass <- deriveAssumps cs
-                                                    t <- TVar <$> acquireId "undef"
-                                                    let ass' = ass `extAssump` ("undefined", generalize ass t)
-                                                    ty <- inferE ass' body
-                                                    s <- getSubst
-                                                    return $ (ty, s)
+builtinTys :: [(Name, Type)]
+builtinTys = fmap (\(a, _, c) -> (a, c)) builtinCombinatorSignatures
+
+infer :: ConstrsTable -> Pipe ErrorMessage [CoreCombinator] ()
+infer cs b = runTI cs $ do ass  <- deriveAssumps cs
+                           ass' <- builtinAssumps ass builtinTys
+                           let inferC' ass b = fst <$> inferC ass b
+                           foldM inferC' ass' b
+                           return ()
 
 type Subst = Map Name Type
 
@@ -126,6 +129,12 @@ deriveAssumps :: ConstrsTable -> TI Assumptions
 deriveAssumps ct = do ps <- mapM inject (snd <$> ct)
                       return $ L.foldl extAssump (Assumptions M.empty) ps
 
+builtinAssumps :: Assumptions -> [(Name, Type)] -> TI Assumptions
+builtinAssumps ass ps = do let names = fst <$> ps
+                           let tys = snd <$> ps
+                           scs <- mapM builtinScheme tys
+                           return $ L.foldl extAssump ass (names `zip` scs)
+
 inferLam :: Assumptions -> [Name] -> CoreExpr -> TI Type
 inferLam a [x] body = do x' <- TVar <$> acquireId "x"
                          let a' = a `extAssump` (x, Forall [] x')
@@ -140,7 +149,6 @@ inferL LString {}  = return tString
 inferL _           = E.throwE "TODO: unimplemented literal type"
 
 inferE :: Assumptions -> CoreExpr -> TI Type
-inferE a e | trace ("inferE: " <> show e) False = undefined
 inferE _ (ELit l) = inferL l
 inferE (Assumptions env) (EVar v) = case M.lookup v env of
                                       Nothing -> E.throwE $ "Unbound var: " <> v
@@ -171,18 +179,24 @@ inferE ass (EPick c f e) = do constr <- getConstr c
                               unify dt e
                               s <- getSubst
                               return $ apply s ct
-inferE ass (ELet [CoreCombinator f ps e] body) = do t <- TVar <$> acquireId "rec"
-                                                    let sc   = generalize ass t
-                                                    let ass' = ass `extAssump` (f, sc)
-                                                    bt <- inferE ass' $ if L.null ps then e else ELam ps e
-                                                    unify bt t
-                                                    s <- getSubst
-                                                    let tf   = generalize (apply s ass') bt
-                                                    let ass'' = apply s $ ass' `extAssump` (f, tf)
-                                                    t <- inferE ass'' body
-                                                    s <- getSubst
-                                                    return $ apply s t
+inferE ass (ELet [b@CoreCombinator {}] body) = do (ass', _) <- inferC ass b
+                                                  inferE ass' body
 inferE ass (ELet (b:bs) body) = inferE ass $ ELet [b] $ ELet bs body
+
+inferC :: Assumptions -> CoreCombinator -> TI (Assumptions, Type)
+inferC ass (CoreCombinator f ps body) = do t <- TVar <$> acquireId f
+                                           let sc   = generalize ass t
+                                           let ass' = ass `extAssump` (f, sc)
+                                           bt <- inferE ass' $ if L.null ps then body else ELam ps body
+                                           unify bt t
+                                           s <- getSubst
+                                           let t' = apply s t
+                                           let tf = generalize (apply s ass') t'
+                                           let ass'' = apply s $ ass' `extAssump` (f, tf)
+                                           return (ass'', t')
+
+builtinScheme :: Type -> TI Scheme
+builtinScheme ty = constr (Forall (tFVs ty) ty)
 
 constr :: Scheme -> TI Scheme
 constr (Forall as ty) = do vs <- mapM acquireId as
