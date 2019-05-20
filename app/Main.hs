@@ -66,7 +66,6 @@ compileSCPipe :: Pipe ErrorMessage Source [GInstr]
 compileSCPipe s = do prog         <- progromPipes s
                      ct           <- constrPipes prog
                      cs           <- mconcat <$> corePipes prog
-                     trace (unpack $ toStrict $ pShow cs) $ return ()
                      infer ct cs
                      (scs, entry) <- liftCombinators builtins ct cs
                      instrs       <- compileProgram scs

@@ -187,13 +187,16 @@ inferC :: Assumptions -> CoreCombinator -> TI (Assumptions, Type)
 inferC ass (CoreCombinator f ps body) = do t <- TVar <$> acquireId f
                                            let sc   = generalize ass t
                                            let ass' = ass `extAssump` (f, sc)
-                                           bt <- inferE ass' $ if L.null ps then body else ELam ps body
+                                           let body' = if L.null ps then body else ELam ps body
+                                           bt <- inferE ass' body'
                                            unify bt t
                                            s <- getSubst
                                            let t' = apply s t
                                            let tf = generalize (apply s ass') t'
                                            let ass'' = apply s $ ass' `extAssump` (f, tf)
-                                           return (ass'', t')
+                                           bt' <- inferE ass'' body'
+                                           unify bt' t
+                                           return (ass'', bt')
 
 builtinScheme :: Type -> TI Scheme
 builtinScheme ty = constr (Forall (tFVs ty) ty)
