@@ -9,7 +9,7 @@ data GInstr
   | GPushPrimI   Int
   -- TODO GPushPrimS, GPushPrimD, GPushPrimC...
   | GPushGlobal  Name
-  | GBuiltin     Name
+  | GBuiltin     Name Int
   | GPack        Name Int
   | GPick             Int
   | GTest        Name

@@ -24,6 +24,7 @@ pp' p                = [pp p]
 pp :: GInstr -> String
 pp (GPack        n a) = dual    "pack"        n a
 pp (GGlobalStart n a) = dual    "globalstart" n a
+pp (GBuiltin     n a) = dual    "builtin"     n a
 pp (GPush       r)    = singleI "push"        r
 pp (GPick       i)    = singleI "pick"        i
 pp (GTest       n)    = singleS "test"        n
@@ -36,7 +37,6 @@ pp (GAlloc      n)    = singleI "alloc"       n
 pp (GLabel      i)    = singleI "label"       i
 pp (GJump       i)    = singleI "jump"        i
 pp (GJumpFalse  i)    = singleI "jfalse"      i
-pp (GBuiltin    n)    = singleS "builtin"     n
 pp (GEntry      e)    = singleS "entry"       e
 pp (GComment    s)    = "; " <> s
 pp GGlobalEnd         = "globalend"

@@ -169,7 +169,7 @@ compileBuiltin (name, arity) = do instr $ GGlobalStart (builtin name) arity
                                     instr $ GPush n
                                     instr   GUnwind
                                     instr $ GUpdate $ n + 1
-                                  instr $ GBuiltin name
+                                  instr $ GBuiltin name arity
                                   instr $ GUpdate 1
                                   instr   GGlobalEnd
 

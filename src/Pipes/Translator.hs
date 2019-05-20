@@ -62,9 +62,7 @@ trA exam (CaseAlternative (PCon con ps) e:rs) = do let vs = unPVar <$> ps
                                                    let examE = C.EVar exam
                                                    let bindings = mkBinding examE con <$> (vs `zip` [0..arity])
                                                    e' <- trE e
-                                                   let passE = if null bindings
-                                                                  then e'
-                                                                  else C.ELet bindings e'
+                                                   let passE = foldr (\bn b -> C.ELet [bn] b) e' bindings
                                                    let checkE = ETest con examE
                                                    failE <- trA exam rs
                                                    return $ C.EIf checkE passE failE
