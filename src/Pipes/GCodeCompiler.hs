@@ -132,8 +132,8 @@ compileE p d = r
     r (SCPack tag _)            = instr $ GPushGlobal $ pack    tag
     r (SCPick c)                = instr $ GPushGlobal $ pick    c
     r (SCTest c)                = instr $ GPushGlobal $ test    c
-    r (SCApp lhs rhs)           = do compileE p  d      lhs
-                                     compileE p (d + 1) rhs
+    r (SCApp lhs rhs)           = do compileE p  d      rhs
+                                     compileE p (d + 1) lhs
                                      instr GMkApp
     r (SCLet name expr body)    = do compileE p  d  expr
                                      let d' = d + 1
@@ -169,7 +169,7 @@ compileBuiltin (name, arity) = do instr $ GGlobalStart (builtin name) arity
                                     instr $ GPush n
                                     instr   GUnwind
                                     instr $ GUpdate $ n + 1
-                                  instr $ GBuiltin name arity
+                                  instr $ GBuiltin name
                                   instr $ GUpdate 1
                                   instr   GGlobalEnd
 

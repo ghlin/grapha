@@ -49,9 +49,14 @@ mkBinding :: CoreExpr -> Name -> (Name, Int) -> CoreCombinator
 mkBinding e c (v, f) = CoreCombinator v [] (EPick c f e)
 
 trA :: Name -> [CaseAlternative] -> M CoreExpr
-trA _    []                                = return $ C.EVar missingCaseVarName
-trA exam (CaseAlternative (PVar v) e : _)  = trE $ subst v exam e
-trA _    (CaseAlternative PWildcard e : _) = trE e
+trA _    []                              = return $ C.EVar missingCaseVarName
+trA exam (CaseAlternative (PVar v) e:_)  = trE $ subst v exam e
+trA _    (CaseAlternative PWildcard e:_) = trE e
+trA exam (CaseAlternative (PLit l) e:rs) = do let examE = C.EVar exam
+                                              let checkE = C.EApp (C.EApp (C.EVar "==") (C.ELit l)) examE
+                                              passE  <- trE e
+                                              failE <- trA exam rs
+                                              return $ C.EIf checkE passE failE
 trA exam (CaseAlternative (PCon con ps) e:rs) = do let vs = unPVar <$> ps
                                                    let arity = length vs
                                                    let examE = C.EVar exam
