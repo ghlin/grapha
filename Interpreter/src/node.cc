@@ -4,7 +4,7 @@
 namespace gi {
 
 static inline
-char const *pretty_print_node_type(NodeType t)
+Str pretty_print_node_type(NodeType t)
 {
 #define pp(x) if (t == x) return &*(#x) /* &* to silent the warning */ + 2
   pp(N_Proc);
@@ -14,7 +14,7 @@ char const *pretty_print_node_type(NodeType t)
   pp(N_Pack);
 #undef  pp
 
-  return "Unknown";
+  return fmt::format("Unknown {}", t);
 }
 
 Str pretty_print_node(Node const &node)
@@ -35,6 +35,8 @@ Seq<Str> do_pretty_print_tree(node_ref_t root, Set<node_ref_t> &v);
 
 Seq<Str> make_tree(Str const &heading, node_ref_t *children, Set<node_ref_t> &v)
 {
+  if (!*children) return { heading };
+
   auto deco1  = " -+- ";
   auto cont1 = "  |  ";
   auto deco2 = "  `- ";

@@ -416,7 +416,11 @@ ginstr_prim_t interp(SectionMap const &sections, Str const &entry_name)
   fmt::print(stderr, "-- memory allocated: {} cell(s), {} kb\n", ctx.allocator.pool.size(), ctx.allocator.pool.size() * sizeof (Node) / 1024);
   fmt::print(stderr, "{}\n", pretty_print_tree(r, "-- interp returned: "));
 
-  gi_assert(r->t == N_Prim);
+  if (r->t != N_Prim) {
+    fmt::print(stderr, "-- warning: program exited with non-integer object, fallback to 0");
+
+    return 0;
+  }
 
   return r->d.value;
 }
@@ -465,9 +469,13 @@ node_ref_t interp_builtin( char const *name
     GInstr dummy;
     dummy.t = GI_UNUSED;
 
-    stk->push(A(1)); // eval this to whnf...
-    interp_GI_Unwind(ctx, stk, nullptr, dummy.t, dummy.d);
-    stk->pop(1);
+    auto caf = A(1)->t == N_Proc && A(1)->d.arity == 0;
+
+    if (A(1)->t == N_App || caf) {
+      stk->push(A(1)); // eval this to whnf...
+      interp_GI_Unwind(ctx, stk, nullptr, dummy.t, dummy.d);
+      stk->pop(1);
+    }
 
     update_cell(result, A(2));
   }
