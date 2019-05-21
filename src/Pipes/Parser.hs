@@ -227,7 +227,7 @@ expr' = do
   e1 <- termE
   fallback' e1 $ do
     o1 <- lexemeN $ infixV <|> infixT
-    rs <- many $ try $ (,) <$> termE <*> (infixV <|> infixV)
+    rs <- many $ try $ (,) <$> termE <*> lexemeN (infixV <|> infixT)
     el <- expr
     return $ rotate $ build el $ (e1, o1):rs
       where build                                = foldr mk
