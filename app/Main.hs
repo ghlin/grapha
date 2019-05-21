@@ -30,8 +30,6 @@ import           Lang.Builtins
 import           Pipe
 import           Misc
 
-import           Debug.Trace
-
 progromPipes :: Pipe ErrorMessage Source Program
 progromPipes = parse
            >=> injectPrelude
@@ -55,12 +53,6 @@ pipe s = do p  <- progromPipes s
 
 builtins :: [(Name, Int)]
 builtins = fmap (\(a, b, _) -> (a, b)) builtinCombinatorSignatures
-
-liftPipe :: Pipe ErrorMessage Source ([SC], Name)
-liftPipe s = do prog <- progromPipes s
-                cs   <- mconcat <$> corePipes prog
-                ct   <- constrPipes prog
-                liftCombinators builtins ct cs
 
 compileSCPipe :: Pipe ErrorMessage Source [GInstr]
 compileSCPipe s = do prog         <- progromPipes s
