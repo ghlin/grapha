@@ -2,7 +2,6 @@ module Pipes.Desugar
   ( desugar
   ) where
 
-import Debug.Trace
 import           Lang.Surface
 import           Misc
 import           Pipe

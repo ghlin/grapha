@@ -5,7 +5,10 @@ module Pipes.Parser
   , Source (..)
   ) where
 
-import           Control.Monad                  ( void, when, (>=>) )
+import           Control.Monad                  ( void
+                                                , when
+                                                , (>=>)
+                                                )
 import           Control.Monad.Combinators.Expr
 import           Data.Functor                   ( ($>) )
 import           Data.Maybe                     ( isJust )

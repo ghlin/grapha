@@ -1,8 +1,8 @@
 module Main where
 
 import           Control.Monad
-import           Data.Text         ( unpack )
-import           Data.Text.Lazy    ( toStrict )
+import           Data.Text                      ( unpack )
+import           Data.Text.Lazy                 ( toStrict )
 import           System.Environment
 import           Text.Pretty.Simple
 
@@ -30,7 +30,7 @@ import           Lang.Builtins
 import           Pipe
 import           Misc
 
-import Debug.Trace
+import           Debug.Trace
 
 progromPipes :: Pipe ErrorMessage Source Program
 progromPipes = parse
@@ -82,6 +82,6 @@ main = do
   [srcFile]  <- getArgs
   srcContent <- readFile srcFile
   case compileSCPipe (Source srcFile srcContent) of
-    Left e  -> putStrLn e
+    Left  e -> putStrLn e
     Right a -> mapM_ putStrLn $ printGCode a
 

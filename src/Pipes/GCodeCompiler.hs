@@ -2,12 +2,12 @@ module Pipes.GCodeCompiler
   ( compileProgram
   ) where
 
-import           Data.List                      ( union )
 import           Control.Monad
 import           Control.Monad.Trans.Class      ( lift )
 import qualified Control.Monad.Trans.State     as T
 import qualified Control.Monad.Trans.Writer    as W
 import qualified Control.Monad.Trans.Except    as E
+import           Data.List                      ( union )
 import           Text.Printf                    ( printf )
 import           Lang.SC
 import           Lang.GCode

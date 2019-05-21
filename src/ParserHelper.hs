@@ -39,10 +39,10 @@ module ParserHelper
   , ($>)
   ) where
 
-import           Data.Functor                   ( ($>) )
-import           Data.Void                      ( Void )
 import           Control.Arrow                  ( left )
 import           Control.Monad                  ( void )
+import           Data.Functor                   ( ($>) )
+import           Data.Void                      ( Void )
 import           Text.Megaparsec
 import           Text.Megaparsec.Error          ( errorBundlePretty )
 import           Text.Megaparsec.Char    hiding ( string )

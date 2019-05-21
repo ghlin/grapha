@@ -15,7 +15,7 @@ import           Pipes.ConstrCollector
 import           Misc
 import           Pipe
 
-import Debug.Trace
+import           Debug.Trace
 
 builtinTys :: [(Name, Type)]
 builtinTys = fmap (\(a, _, c) -> (a, c)) builtinCombinatorSignatures

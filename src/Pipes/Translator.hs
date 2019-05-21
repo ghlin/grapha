@@ -14,7 +14,7 @@ import           Lang.Builtins
 import           Misc
 import           Pipe
 
-import        Debug.Trace
+import           Debug.Trace
 
 translate :: Pipe ErrorMessage [CombinatorDef] [CoreCombinator]
 translate = Right . fmap translateC
