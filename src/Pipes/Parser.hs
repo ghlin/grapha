@@ -54,7 +54,7 @@ parser = organize <$> between scn eof (many $ lexemeN toplevel)
 literal :: P Literal
 literal = LString  <$> lexeme H.string
       <|> LInteger <$> lexeme H.integer
-
+      <|> LChar    <$> lexeme H.character
 -- }}}
 
 -- {{{ type / type scheme parsers

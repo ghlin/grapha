@@ -15,8 +15,6 @@ import           Pipes.ConstrCollector
 import           Misc
 import           Pipe
 
-import           Debug.Trace
-
 builtinTys :: [(Name, Type)]
 builtinTys = fmap (\(a, _, c) -> (a, c)) builtinCombinatorSignatures
 
@@ -56,15 +54,16 @@ instance Types Scheme where
 
 data TState
   = TState
-    { supply :: Int
-    , substs :: Subst
+    { supply  :: Int
+    , substs  :: Subst
     , constrs :: ConstrsTable
+    , which   :: String
     }
 
 type TI a = E.ExceptT ErrorMessage (T.State TState) a
 
 runTI :: ConstrsTable -> TI a -> Either ErrorMessage a
-runTI cs = flip T.evalState (TState 0 noSubst cs) . E.runExceptT
+runTI cs = flip T.evalState (TState 0 noSubst cs "<toplevel>") . E.runExceptT
 
 acquireId :: String -> TI Name
 acquireId pref = do i <- (+ 1) <$> lift (T.gets supply)
@@ -95,7 +94,14 @@ mgu (TApp l r) (TApp l' r') = do s1 <- mgu l l'
 mgu (TVar u) t                     = bindVar u t
 mgu t        (TVar u)              = bindVar u t
 mgu (TCon c1) (TCon c2) | c1 == c2 = return noSubst
-mgu t1 t2 = E.throwE $ "Type doesn't unify:" <> "\nt1 = " <> show t1 <> "\nt2 = " <> show t2
+mgu t1 t2 = do c <- lift $ T.gets which
+               E.throwE $ "Type doesn't unify:"
+                       <> "\nt1 = "
+                       <> show t1
+                       <> "\nt2 = "
+                       <> show t2
+                       <> "\nIn combinator: "
+                       <> c
 
 bindVar :: Name -> Type -> TI Subst
 bindVar u t | t == TVar u = return noSubst
@@ -146,6 +152,7 @@ inferLam a (x:xs) body = inferE a $ ELam [x] $ ELam xs body
 inferL :: Literal -> TI Type
 inferL LInteger {} = return tInt
 inferL LString {}  = return tString
+inferL LChar {}    = return tChar
 inferL _           = E.throwE "TODO: unimplemented literal type"
 
 inferE :: Assumptions -> CoreExpr -> TI Type
@@ -184,7 +191,8 @@ inferE ass (ELet [b@CoreCombinator {}] body) = do (ass', _) <- inferC ass b
 inferE ass (ELet (b:bs) body) = inferE ass $ ELet [b] $ ELet bs body
 
 inferC :: Assumptions -> CoreCombinator -> TI (Assumptions, Type)
-inferC ass (CoreCombinator f ps body) = do t <- TVar <$> acquireId f
+inferC ass (CoreCombinator f ps body) = do lift $ T.modify $ \s -> s { which = f }
+                                           t <- TVar <$> acquireId f
                                            let sc   = generalize ass t
                                            let ass' = ass `extAssump` (f, sc)
                                            let body' = if L.null ps then body else ELam ps body

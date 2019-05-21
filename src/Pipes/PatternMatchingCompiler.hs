@@ -92,7 +92,7 @@ lookupProd p = do dts <- T.gets env
 
 match :: [Name] -> Expression -> [MatchClause] -> M Expression
 match _  _ [([], e)]  = compileE e
-match [] e []         = compileE e
+match [] e _          = compileE e
 match ns e cs         = foldM (runMatch ns) e $ reverse $ partition cs
 
 preprocessPat :: MatchClause -> M MatchClause

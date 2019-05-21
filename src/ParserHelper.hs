@@ -9,6 +9,7 @@ module ParserHelper
   , identOf
   , integer
   , string
+  , character
   , surround
   , angles
   , braces
@@ -87,6 +88,13 @@ integer = lexeme L.decimal
 
 string :: P String
 string = char '"' *> manyTill L.charLiteral (char '"')
+
+character :: P Char
+character = char '\'' *> (escaped <|> L.charLiteral) <* char '\''
+  where escaped = escape <$> (lookAhead (char '\\') *> L.charLiteral)
+        escape 't' = '\t'
+        escape 'n' = '\n'
+        escape 'r' = '\r'
 
 surround :: String -> String -> P a -> P a
 surround l r = between (symbol l) (symbol r)

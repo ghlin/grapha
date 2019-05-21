@@ -20,7 +20,5 @@ data SCExpr
   | SCLetRec  [(Name, SCExpr)] SCExpr -- ^ mutal rec let
   deriving (Show)
 
-type SCProgram = ( [SC]     -- ^ sequence of sc defns
-                 , Name     -- ^ and the entry sc name
-                 )
+type SCProgram = ([SC], Name)    -- ^ sequence of sc defns, and the entry sc name
 

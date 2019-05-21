@@ -8,6 +8,7 @@ import qualified Control.Monad.Trans.State     as T
 import qualified Control.Monad.Trans.Writer    as W
 import qualified Control.Monad.Trans.Except    as E
 import           Data.List                      ( union )
+import           Data.Char                      ( ord )
 import           Text.Printf                    ( printf )
 import           Lang.SC
 import           Lang.GCode
@@ -124,6 +125,7 @@ compileE :: Compiler (SCExpr -> M ())
 compileE p d = r
   where
     r (SCLit (LInteger i))      = instr $ GPushPrimI i
+    r (SCLit (LChar c))         = instr $ GPushPrimI $ ord c
     r (SCLit l)                 = E.throwE $ "TODO [GCodeCompiler.compileE]: unimplemented"
     r (SCVar v) | head v == '$' = instr $ GPushGlobal v
                 | otherwise     = do ref <- lookupRef v p

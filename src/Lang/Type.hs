@@ -14,6 +14,7 @@ data Type
 tInt, tString, tBool, tUnit, tFun :: Type
 tInt    = TCon "Int"
 tString = TCon "String"
+tChar   = TCon "Char"
 tBool   = TCon "Bool"
 tUnit   = TCon "()"
 tFun    = TCon "->"

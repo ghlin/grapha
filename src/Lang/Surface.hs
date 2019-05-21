@@ -115,20 +115,6 @@ data Program
 
 -- {{{ helpers
 
-propagateE :: (Expression -> Expression) -> Expression -> Expression
-propagateE f (ELet bs e)        = f $ ELet (mapE (propagateE f) <$> bs) $ propagateE f $ f e
-propagateE f (ECase e alts)     = f $ ECase (propagateE f $ f e) $ mapE (propagateE f) <$> alts
-propagateE f (EApp l r)         = f $ EApp (propagateE f $ f l) (propagateE f $ f r)
-propagateE f (EIf c t e)        = f $ EIf (propagateE f $ f c) (propagateE f $ f t) (propagateE f $ f e)
-propagateE f (ELam ps e)        = f $ ELam ps $ propagateE f $ f e
-propagateE f (EUnary n e)       = f $ EUnary n $ propagateE f $ f e
-propagateE f (EBinary n l r)    = f $ EBinary n (propagateE f $ f l) (propagateE f $ f r)
-propagateE f (EListLiteral es)  = f $ EListLiteral $ propagateE f <$> (f <$> es)
-propagateE f (ETupleLiteral es) = f $ ETupleLiteral $ propagateE f <$> (f <$> es)
-propagateE f (EQuoted e)        = f $ EQuoted $ propagateE f $ f e
-propagateE f (EIndir e)         = f $ EIndir $ propagateE f $ f e
-propagateE f e                  = f e
-
 class HasExpression f where
   mapE :: (Expression -> Expression) -> f -> f
 
