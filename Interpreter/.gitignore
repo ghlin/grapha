@@ -1,0 +1,8 @@
+*.swp
+*.swo
+*.o
+build/
+test-build/
+test-compile/
+scripts/
+/.vscode/settings.json

@@ -1,0 +1,27 @@
+CMAKE_MINIMUM_REQUIRED(VERSION 3.8.0)
+
+PROJECT(gi VERSION 0.0.1)
+
+SET(CMAKE_CXX_STANDARD 17)
+SET(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+SET(GI_SRC
+  src/runtime.cc
+  src/main.cc
+  src/sc.cc
+  src/parse.cc
+  src/node.cc
+  src/ginstr.cc
+  src/vm.cc)
+
+ADD_EXECUTABLE(gi ${GI_SRC})
+
+FIND_LIBRARY(fmt REQUIRED)
+
+TARGET_LINK_LIBRARIES(gi fmt)
+
+SET_TARGET_PROPERTIES(gi PROPERTIES
+  OUTPUT_NAME              "gi"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+INSTALL(TARGETS gi DESTINATION bin)

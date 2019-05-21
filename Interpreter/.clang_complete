@@ -1,0 +1,5 @@
+-W
+-Wall
+-Wextra
+-std=c++17
+-DDEBUG=1
