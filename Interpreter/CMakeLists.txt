@@ -6,7 +6,6 @@ SET(CMAKE_CXX_STANDARD 17)
 SET(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 SET(GI_SRC
-  src/runtime.cc
   src/main.cc
   src/sc.cc
   src/parse.cc

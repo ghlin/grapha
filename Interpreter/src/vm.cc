@@ -1,6 +1,5 @@
 #include "vm.h"
 #include "misc.h"
-#include "runtime.h"
 
 namespace gi {
 
@@ -9,6 +8,23 @@ static Seq<Str> g_dump_sc_names;
 
 extern void set_dump_steps(bool dump_steps)   { g_dump_steps = dump_steps;       }
 extern void add_dump_sc_name(Str const &name) { g_dump_sc_names.push_back(name); }
+
+struct Context;
+struct Stack;
+
+node_ref_t interp_builtin( char const *name
+                         , u32 arity
+                         , node_ref_t *args
+                         , node_ref_t  result
+                         , Context    *ctx
+                         , Stack      *stk);
+static inline
+void update_cell( node_ref_t dst
+                , node_ref_t src)
+{
+  if (dst == src) return;
+  std::memcpy(dst, src, sizeof *dst);
+}
 
 static inline
 bool should_dump_sc(char const *name)
@@ -233,14 +249,14 @@ HANDLE(GI_Unwind)
     return;
   } else if (target->t == N_Proc) /* of zero arity */ {
     auto result = interp(c, s, target->d.name, target->d.program); // the stack was unchanged.
-    if (s->top() != result) std::memcpy(s->top(), result, sizeof *result);
+    update_cell(s->top(), result);
   } else if (target->t == N_App) {
     auto proc = unwind(s);
 
     gi_assert(proc->t == N_Proc);
 
     auto result = interp(c, s, proc->d.name, proc->d.program);
-    if (s->top() != result) std::memcpy(s->top(), result, sizeof *result);
+    update_cell(s->top(), result);
   } else {
     throw std::runtime_error("what happened?");
   }
@@ -256,7 +272,7 @@ HANDLE(GI_MakeAppl)
 HANDLE(GI_Update)
 {
   if (d.n == 0) return;
-  std::memcpy(s->r(d.n), s->top(), sizeof (Node));
+  update_cell(s->r(d.n), s->top());
   s->pop();
 }
 
@@ -322,6 +338,8 @@ HANDLE(GI_Builtin)
                               , d.arity
                               , args
                               , c->allocator.acquire(N_Prim)
+                              , c
+                              , s
                               );
   s->push(result);
 }
@@ -401,6 +419,64 @@ ginstr_prim_t interp(SectionMap const &sections, Str const &entry_name)
   gi_assert(r->t == N_Prim);
 
   return r->d.value;
+}
+
+// runtime part
+node_ref_t interp_builtin( char const *name
+                         , u32 arity
+                         , node_ref_t *args
+                         , node_ref_t result
+                         , Context    *ctx
+                         , Stack      *stk)
+{
+#define CASE(x)  else if (std::strcmp(name, #x) == 0)
+#define CASE_(x) else if (std::strcmp(name, x) == 0)
+#define DEFAULT  else
+#define SWITCH   if (false) { }
+#define V(n)     (A(n)->d.value)
+#define A(n)     (args[arity - (n)])
+
+  result->t = N_Prim;
+  SWITCH
+  CASE (==)      { result->d.value = V(1) == V(2); }
+  CASE (-)       { result->d.value = V(1) -  V(2); }
+  CASE (+)       { result->d.value = V(1) +  V(2); }
+  CASE (*)       { result->d.value = V(1) *  V(2); }
+  CASE (/)       { result->d.value = V(1) /  V(2); }
+  CASE (put-char)   {
+    std::putchar(V(1));
+    result->d.value = 0;
+  }
+  CASE (put-int)   {
+    std::printf("%d", V(1));
+    result->d.value = 0;
+  }
+  CASE (get-char)  {
+    result->d.value = std::getchar();
+  }
+  CASE (get-int)  {
+    std::scanf("%d", &result->d.value);
+  }
+  CASE (undefined) {
+    fmt::print(stderr, "Bottom\n");
+    throw std::runtime_error("Bottom");
+  }
+  CASE (seq) {
+    GInstr dummy;
+    dummy.t = GI_UNUSED;
+
+    stk->push(A(1)); // eval this to whnf...
+    interp_GI_Unwind(ctx, stk, nullptr, dummy.t, dummy.d);
+    stk->pop(1);
+
+    update_cell(result, A(2));
+  }
+  DEFAULT {
+    fmt::print(stderr, "Unknown builtin instruction [{}, {}]\n", name, arity);
+    throw std::runtime_error("Unknown builtin");
+  }
+
+  return result;
 }
 
 } // namespace gi
