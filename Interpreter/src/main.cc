@@ -34,11 +34,19 @@ int main(int argc, char const **argv)
   for (std::string line; std::getline(std::cin, line); source += '\n')
     source += line;
 
-  auto [stmts, entry] = gi::parse_instrs(source);
-  auto sections       = gi::preprocess(stmts);
-  auto result         = gi::interp(sections, entry);
+  try {
+    auto [stmts, entry] = gi::parse_instrs(source);
+    auto sections       = gi::preprocess(stmts);
+    auto result         = gi::interp(sections, entry);
 
-  std::cout << result << std::endl;
+    std::cout << result << std::endl;
+  } catch (std::exception const &e) {
+    std::cerr << "Something went wrong: " << e.what() << std::endl;
+    return 1;
+  } catch (...) {
+    std::cerr << "Something went wrong..." << std::endl;
+    return 1;
+  }
 
   return 0;
 }
