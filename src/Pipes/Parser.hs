@@ -226,7 +226,7 @@ expr' :: P Expression
 expr' = do
   e1 <- termE
   fallback' e1 $ do
-    o1 <- infixV <|> infixT
+    o1 <- lexemeN $ infixV <|> infixT
     rs <- many $ try $ (,) <$> termE <*> (infixV <|> infixV)
     el <- expr
     return $ rotate $ build el $ (e1, o1):rs
