@@ -56,7 +56,7 @@ re ::  [N a] -> [[N a]]
 re nodes = r initialDeps [] nodes
   where allDeps         = mconcat $ fst . fst <$> nodes
         allProvides     = mconcat $ snd . fst <$> nodes
-        initialDeps     = allDeps \\ allProvides
+        initialDeps     = allProvides \\ allDeps
         r syms outs ins = case re' syms ins of
                             ([], cyc)  -> cyc:outs -- cyc内存在循环依赖或者依赖缺失
                                                    -- TODO 考虑:
@@ -66,7 +66,7 @@ re nodes = r initialDeps [] nodes
                                                    -- 实际结果应当为     (m, n)    (q)
                                                    -- 但现在会粗略地返回 (m, n, q)
                             (ok, pend) -> let introduced = mconcat $ snd . fst <$> ok
-                                           in r (syms <> introduced) (outs <> (singleton <$> ok)) pend
+                                           in r (syms <> introduced) ((singleton <$> ok) <> outs) pend
 
 mk :: [Name] -> [Name] -> a -> N a
 mk deps provides payload = ((deps \\ provides, provides), payload)
