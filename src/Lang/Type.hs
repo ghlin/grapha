@@ -1,6 +1,6 @@
 module Lang.Type where
 
-import           Data.List                      ( union )
+import           Data.List                      ( union, intercalate )
 import           Misc
 
 data Scheme     = Forall [Name] Type deriving (Show, Eq)
@@ -29,3 +29,22 @@ tFVs :: Type -> [Name]
 tFVs (TVar n  ) = [n]
 tFVs (TApp l r) = tFVs l `union` tFVs r
 tFVs _          = []
+
+flattenTy :: Type -> [Type]
+flattenTy (TApp l r) = flattenTy l <> [r]
+flattenTy t          = [t]
+
+prettyTy :: Type -> String
+prettyTy (TVar v) = v
+prettyTy (TCon n) = n
+prettyTy (TApp (TCon "[]") t) = "[" <> prettyTy t <> "]"
+prettyTy t = pp $ flattenTy t
+  where
+    pp [TCon "->", l, r]             = ppl (flattenTy l) <> " -> " <> prettyTy r
+    pp (TCon v : ts) | head v == '(' = parens $ intercalate ", " $ fmap prettyTy ts
+    pp (TCon v : ts)                 = intercalate " " $ v : fmap (ppl . flattenTy) ts
+
+    ppl [TCon "->", l, r] = parens $ ppl (flattenTy l) <> " -> " <> prettyTy r
+    ppl t                 = pp t
+
+    parens = ("(" <>) . (<> ")")
