@@ -4,6 +4,8 @@ import           Control.Monad
 import           Data.Text                      ( unpack )
 import           Data.Text.Lazy                 ( toStrict )
 import           System.Environment
+import           System.IO
+import           System.Exit
 import           Text.Pretty.Simple
 
 import           Pipes.Parser
@@ -57,9 +59,9 @@ builtins = fmap (\(a, b, _) -> (a, b)) builtinCombinatorSignatures
 compileSCPipe :: Pipe ErrorMessage Source [GInstr]
 compileSCPipe s = do prog         <- progromPipes s
                      ct           <- constrPipes prog
-                     cs           <- mconcat <$> corePipes prog
-                     infer ct cs
-                     (scs, entry) <- liftCombinators builtins ct cs
+                     grs          <- corePipes prog
+                     _            <- infer ct grs      -- this is really slow...
+                     (scs, entry) <- liftCombinators builtins ct $ mconcat grs
                      instrs       <- compileProgram scs
                      let header = [ "Compiled from " <> sourceFileName s
                                   , "------ original content: ------" ]
@@ -74,6 +76,8 @@ main = do
   [srcFile]  <- getArgs
   srcContent <- readFile srcFile
   case compileSCPipe (Source srcFile srcContent) of
-    Left  e -> putStrLn e
-    Right a -> mapM_ putStrLn $ printGCode a
+    Left  e      -> do hPutStrLn stderr e
+                       hPutStrLn stderr "Can't compile, good luck then..."
+                       exitWith $ ExitFailure 1
+    Right instrs -> mapM_ putStrLn $ printGCode instrs
 
