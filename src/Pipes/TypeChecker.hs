@@ -158,8 +158,10 @@ inferL _           = E.throwE "TODO: unimplemented literal type"
 inferE :: Assumptions -> CoreExpr -> TI Type
 inferE _ (ELit l) = inferL l
 inferE (Assumptions env) (EVar v) = case M.lookup v env of
-                                      Nothing -> E.throwE $ "Unbound var: " <> v
                                       Just t  -> instantiate t -- monotype
+                                      Nothing -> do combinator <- lift $ T.gets which
+                                                    E.throwE $ "In combinator " <> combinator
+                                                            <> "\nUnbound var: " <> v
 inferE ass (ELam vs body) = inferLam ass vs body
 inferE ass (EApp f x) = do t <- TVar <$> acquireId "a"
                            t1 <- inferE ass f
