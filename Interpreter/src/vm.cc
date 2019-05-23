@@ -27,6 +27,35 @@ void update_cell( node_ref_t dst
 }
 
 static inline
+bool check_pack_true(node_ref_t cell)
+{
+  return cell->t == N_Pack
+    &&   std::strcmp(cell->d.tag, "True") == 0;
+}
+
+static inline
+void set_pack_true(node_ref_t cell)
+{
+  cell->t           = N_Pack;
+  cell->d.tag       = "True";
+  cell->d.fields[0] = nullptr;
+}
+
+static inline
+void set_pack_false(node_ref_t cell)
+{
+  cell->t           = N_Pack;
+  cell->d.tag       = "False";
+  cell->d.fields[0] = nullptr;
+}
+
+static inline
+void set_pack_boolean(node_ref_t cell, bool tf)
+{
+  return tf ? set_pack_true(cell) : set_pack_false(cell);
+}
+
+static inline
 bool should_dump_sc(char const *name)
 {
   for (auto &dump_sc: g_dump_sc_names) {
@@ -169,19 +198,11 @@ node_ref_t unwind(Stack *s)
 
 #define RUNTIME_STACK_SIZE (2048 * 10 * 10)
 
-struct Frame
-{
-  char const     *sc_name;
-  size_t          pc;
-  GInstrs const  *program;
-};
-
 struct Context
 {
   SectionMap const &sections;
   node_ref_t        runtime_stack[RUNTIME_STACK_SIZE];
   NodeAllocator     allocator;
-  Seq<Frame>        frames;
 
   size_t            steps = 0;
 
@@ -194,11 +215,6 @@ struct Context
     }
 
     return found->second;
-  }
-
-  void push_frame(char const *sc_name, GInstrs const *program)
-  {
-    frames.push_back({ sc_name, 0, program });
   }
 };
 
@@ -303,8 +319,8 @@ HANDLE(GI_Jump)
 HANDLE(GI_JumpFalse)
 {
   auto cond = s->pop();
-  gi_assert(cond->t == N_Prim);
-  if (cond->d.value == 0) *ppc = d.offset;
+  auto is_pack_of_true = check_pack_true(cond);
+  if (!is_pack_of_true) *ppc = d.offset;
 }
 
 HANDLE(GI_MakeObj)
@@ -316,11 +332,11 @@ HANDLE(GI_MakeObj)
 
 HANDLE(GI_TestObj)
 {
-  auto pack = s->pop();
-  auto prim = c->allocator.acquire(N_Prim);
+  auto pack   = s->pop();
+  auto result = c->allocator.acquire(N_Pack);
 
-  prim->d.value = std::strcmp(pack->d.tag, d.tag) == 0;
-  s->push(prim);
+  set_pack_boolean(result, strcmp(pack->d.tag, d.tag) == 0);
+  s->push(result);
 }
 
 HANDLE(GI_SelComp)
@@ -442,7 +458,7 @@ node_ref_t interp_builtin( char const *name
 
   result->t = N_Prim;
   SWITCH
-  CASE (==)      { result->d.value = V(1) == V(2); }
+  CASE (==)      { set_pack_boolean(result, V(1) == V(2)); }
   CASE (-)       { result->d.value = V(1) -  V(2); }
   CASE (+)       { result->d.value = V(1) +  V(2); }
   CASE (*)       { result->d.value = V(1) *  V(2); }
