@@ -64,7 +64,7 @@ foldl f acc (x::xs) = f (foldl f acc xs) x
 foldr * acc []      = acc
 foldr f acc (x::xs) = foldr f (f x acc) xs
 
-infixr 0 $
+infixr 1 $
 f $ x = f x
 
 infixr 5 ::
@@ -124,5 +124,7 @@ put-chars (x::xs) = seq (put-char x) (put-chars xs)
 put-ints []      = ()
 put-ints [x]     = seq (put-int x) ()
 put-ints (x::xs) = seq (seq (put-int x) (put-char ',')) (put-ints xs)
+
+a @> b = seq a b
 
 |]
