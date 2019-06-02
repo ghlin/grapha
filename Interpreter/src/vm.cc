@@ -172,6 +172,10 @@ node_ref_t find_redux(node_ref_t root)
   gi_assert(left_most->t == N_Proc);
 
   auto arity   = left_most->d.arity;
+
+  if (depth < arity)
+    return nullptr;
+
   auto through = depth - arity;
   auto redux   = root;
 
@@ -184,11 +188,12 @@ node_ref_t find_redux(node_ref_t root)
 static inline
 node_ref_t unwind(Stack *s)
 {
-  auto root       = s->pop();
-  auto walk       = find_redux(root);
+  auto walk = find_redux(s->top());
+  if (!walk) return nullptr;
+
   node_ref_t proc = nullptr;
 
-  for (s->push(walk); walk->t == N_App; walk = walk->d.lhs) {
+  for (s->pop(), s->push(walk); walk->t == N_App; walk = walk->d.lhs) {
     s->push(walk->d.rhs);
     proc = walk->d.lhs;
   }
@@ -268,6 +273,7 @@ HANDLE(GI_Unwind)
     update_cell(s->top(), result);
   } else if (target->t == N_App) {
     auto proc = unwind(s);
+    if (!proc) return;
 
     gi_assert(proc->t == N_Proc);
 
@@ -443,26 +449,26 @@ ginstr_prim_t interp(SectionMap const &sections, Str const &entry_name)
 
 // runtime part
 node_ref_t interp_builtin( char const *name
-                         , u32 arity
+                         , u32         arity
                          , node_ref_t *args
                          , node_ref_t result
                          , Context    *ctx
                          , Stack      *stk)
 {
-#define CASE(x)  else if (std::strcmp(name, #x) == 0)
-#define CASE_(x) else if (std::strcmp(name, x) == 0)
-#define DEFAULT  else
-#define SWITCH   if (false) { }
-#define V(n)     (A(n)->d.value)
-#define A(n)     (args[arity - (n)])
+#define CASE(x)    else if (std::strcmp(name, #x) == 0)
+#define CASE_(...) else if (__VA_ARGS__)
+#define DEFAULT    else
+#define SWITCH     if (false) { }
+#define V(n)       (A(n)->d.value)
+#define A(n)       (args[arity - (n)])
 
   result->t = N_Prim;
   SWITCH
-  CASE (==)      { set_pack_boolean(result, V(1) == V(2)); }
-  CASE (-)       { result->d.value = V(1) -  V(2); }
-  CASE (+)       { result->d.value = V(1) +  V(2); }
-  CASE (*)       { result->d.value = V(1) *  V(2); }
-  CASE (/)       { result->d.value = V(1) /  V(2); }
+  CASE (==) { set_pack_boolean(result, V(1) == V(2)); }
+  CASE (-)  { result->d.value = V(1) -  V(2); }
+  CASE (+)  { result->d.value = V(1) +  V(2); }
+  CASE (*)  { result->d.value = V(1) *  V(2); }
+  CASE (/)  { result->d.value = V(1) /  V(2); }
   CASE (put-char)   {
     std::putchar(V(1));
     result->d.value = 0;
@@ -485,15 +491,22 @@ node_ref_t interp_builtin( char const *name
     GInstr dummy;
     dummy.t = GI_UNUSED;
 
-    auto caf = A(1)->t == N_Proc && A(1)->d.arity == 0;
+    auto save_arg2 = A(2);
+    auto top = A(1);
 
-    if (A(1)->t == N_App || caf) {
-      stk->push(A(1)); // eval this to whnf...
+    while (true) {
+      auto caf = top->t == N_Proc && top->d.arity == 0;
+
+      if ((top->t != N_App && !caf) || !find_redux(top)) {
+        break;
+      }
+
+      stk->push(top); // eval this to whnf...
       interp_GI_Unwind(ctx, stk, nullptr, dummy.t, dummy.d);
-      stk->pop(1);
+      stk->pop();
     }
 
-    update_cell(result, A(2));
+    update_cell(result, save_arg2);
   }
   DEFAULT {
     fmt::print(stderr, "Unknown builtin instruction [{}, {}]\n", name, arity);
