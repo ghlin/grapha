@@ -121,16 +121,20 @@ main = execParser opts >>= run
       let srcFile = inputFile o
       srcContent <- readFile srcFile
       let source = Source srcFile srcContent
-      withEither (compileSCPipe o source) (run' o source)
+      withEither (compileSCPipe o source) (start o source)
     writeOutput' Nothing lines = putStrLn lines
     writeOutput' (Just file) lines = writeFile file lines
     writeOutput = writeOutput' . outputFile
-    doDumpSC   o source prog  = writeOutput o $ ("-- dump sc --\n" <>)    . unlines $ intersperse "\n" $ prettySC             <$> fst prog
-    doDumpCore o source cores = writeOutput o $ ("-- dump core -- \n" <>) . unlines $ intersperse "\n" $ prettyCoreCombinator <$> cores
-    run' o source irs
-      | dumpCore o = doDumpCore o source (irCore      irs) >> run' (o { dumpCore = False }) source irs
-      | dumpSC   o = doDumpSC   o source (irSCProgram irs) >> run' (o { dumpSC   = False }) source irs
-      | otherwise = withEither (compileGCodePipe source $ irSCProgram irs) $ \instrs ->
+    start o s irs
+      | dumpCore o || dumpSC o = dump         o s irs
+      | otherwise              = compileGCode o s irs
+    doDumpSC   prog  = putStrLn "--- dump sc ---"   >> (mapM_ putStrLn $ prettySC             <$> fst prog)
+    doDumpCore cores = putStrLn "--- dump core ---" >> (mapM_ putStrLn $ prettyCoreCombinator <$> cores)
+    dump o s irs
+      | dumpCore o = doDumpCore (irCore      irs) >> dump (o { dumpCore = False }) s irs
+      | dumpSC   o = doDumpSC   (irSCProgram irs) >> dump (o { dumpSC   = False }) s irs
+      | otherwise  = return ()
+    compileGCode o s irs = withEither (compileGCodePipe s $ irSCProgram irs) $ \instrs ->
         writeOutput o $ unlines $ printGCode instrs
 
 

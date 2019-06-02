@@ -45,7 +45,7 @@ atom _       = True
 
 laidout :: CoreExpr -> Bool
 laidout EIf{}         = True
-laidout ELit{}        = True
+laidout ELet{}        = True
 laidout (EApp  l r  ) = laidout l || laidout r
 laidout (ETest _ e  ) = laidout e
 laidout (EPick _ _ e) = laidout e
