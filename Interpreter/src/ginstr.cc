@@ -36,9 +36,10 @@ Str pretty_print_instr_data(GInstr const &instr)
   case GI_PushRef:    case GI_PushPrim:    case GI_Update:
   case GI_Pop:        case GI_Slide:       case GI_Alloc:
   case GI_Label:      case GI_Jump:        case GI_JumpFalse:
+  case GI_SelComp:
     return fmt::format(" {}", instr.d.value);
-  case GI_TestObj:    case GI_SelComp:
   case GI_PushGlobal: case GI_Builtin:     case GI_GlobalStart:
+  case GI_TestObj:
     return instr.t == GI_GlobalStart
       ? fmt::format(" {} {}", instr.d.name, instr.d.arity)
       : fmt::format(" {}", instr.d.name);
