@@ -21,6 +21,7 @@ dependencies:
 - prettyprinter
 - pretty-simple
 - raw-strings-qq
+- optparse-applicative
 
 library:
   source-dirs: src

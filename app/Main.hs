@@ -1,8 +1,10 @@
 module Main where
 
 import           Control.Monad
+import           Data.List                      ( intersperse )
 import           Data.Text                      ( unpack )
 import           Data.Text.Lazy                 ( toStrict )
+import           Options.Applicative
 import           System.Environment
 import           System.IO
 import           System.Exit
@@ -32,52 +34,103 @@ import           Lang.Builtins
 import           Pipe
 import           Misc
 
-progromPipes :: Pipe ErrorMessage Source Program
-progromPipes = parse
-           >=> injectPrelude
-           >=> balance
-           >=> desugar
-           >=> compilePatternMatching
-           >=> expand
+data Options
+  = Options
+    { inputFile        :: String
+    , outputFile       :: Maybe String
+    , skipTypeChecking :: Bool
+    , noPrelude        :: Bool
+    , dumpCore         :: Bool
+    , dumpSC           :: Bool
+    }
+    deriving (Show)
 
-corePipes :: Pipe ErrorMessage Program [[CoreCombinator]]
-corePipes = regroup
-        >=> mapM translate
+getopts :: Parser Options
+getopts = Options
+  <$> argument str (metavar "FILE")
+  <*> optional (strOption (  long  "output-file"
+                          <> short 'o'
+                          <> help  "output file name"))
+  <*> switch (  long  "skip-typecheck"
+             <> short 't'
+             <> help  "don't run type checker")
+  <*> switch (  long  "no-prelude"
+             <> short 'p'
+             <> help  "don't inject the prelude")
+  <*> switch (  long  "dump-core"
+             <> short 'c'
+             <> help  "instead of generating GCode, dump corecombinators")
+  <*> switch (  long  "dump-sc"
+             <> short  's'
+             <> help   "instead of generating GCode, dump supercombinators")
+
+progromPipes :: Options -> Pipe ErrorMessage Source Program
+progromPipes o = parse
+             >=> injectDataTypes
+             >=> (if noPrelude o then return else injectPrelude)
+             >=> balance
+             >=> desugar
+             >=> compilePatternMatching
+             >=> expand
 
 constrPipes :: Pipe ErrorMessage Program ConstrsTable
 constrPipes = collectConstrs . dataTypeDefs
 
-pipe :: Pipe ErrorMessage Source (ConstrsTable, [[CoreCombinator]], Program)
-pipe s = do p  <- progromPipes s
-            ts <- constrPipes p
-            cs <- corePipes p
-            return (ts, cs, p)
-
 builtins :: [(Name, Int)]
 builtins = fmap (\(a, b, _) -> (a, b)) builtinCombinatorSignatures
 
-compileSCPipe :: Pipe ErrorMessage Source [GInstr]
-compileSCPipe s = do prog         <- progromPipes s
-                     ct           <- constrPipes prog
-                     grs          <- corePipes prog
-                     _            <- infer ct grs      -- this is really slow...
-                     (scs, entry) <- liftCombinators builtins ct $ mconcat grs
-                     instrs       <- compileProgram scs
-                     let header = [ "Compiled from " <> sourceFileName s
-                                  , "------ original content: ------" ]
-                                  <> lines (sourceFileContent s)
-                                  <>
-                                  [ "------- ------- ------- -------" ]
-                     let more   = GComment <$> header
-                     return $ more <> [GEntry entry] <> instrs
+data InternalReps
+  = InternalReps
+    { irProgram   :: Program
+    , irCore      :: [CoreCombinator]
+    , irSCProgram :: SCProgram
+    }
+    deriving (Show)
+
+compileSCPipe :: Options -> Pipe ErrorMessage Source InternalReps
+compileSCPipe o s = do prog   <- progromPipes o s
+                       ct     <- constrPipes prog
+                       ccs    <- translate $ combinatorDefs prog
+                       unless (skipTypeChecking o) $ void $ infer ct ccs -- this is really slow...
+                       scProg <- liftCombinators builtins ct ccs
+                       return $ InternalReps prog ccs scProg
+
+compileGCodePipe :: Source -> Pipe ErrorMessage SCProgram [GInstr]
+compileGCodePipe s (scs, entry) = do instrs       <- compileProgram scs
+                                     let header = [ "Compiled from " <> sourceFileName s
+                                                  , "------ original content: ------" ]
+                                                  <> lines (sourceFileContent s)
+                                                  <>
+                                                  [ "------- ------- ------- -------" ]
+                                     let more   = GComment <$> header
+                                     return $ more <> [GEntry entry] <> instrs
+
+withEither :: Either ErrorMessage b -> (b -> IO ()) -> IO ()
+withEither (Left  e) f = do hPutStrLn stderr e
+                            hPutStrLn stderr "Can't compile, good luck then..."
+                            exitWith $ ExitFailure 1
+withEither (Right e) f = f e
 
 main :: IO ()
-main = do
-  [srcFile]  <- getArgs
-  srcContent <- readFile srcFile
-  case compileSCPipe (Source srcFile srcContent) of
-    Left  e      -> do hPutStrLn stderr e
-                       hPutStrLn stderr "Can't compile, good luck then..."
-                       exitWith $ ExitFailure 1
-    Right instrs -> mapM_ putStrLn $ printGCode instrs
+main = execParser opts >>= run
+  where
+    opts = info (getopts <**> helper) $ fullDesc
+                                     <> progDesc "The Grapha compiler"
+                                     <> header   "grc - Grapha compiler"
+    run o = do
+      let srcFile = inputFile o
+      srcContent <- readFile srcFile
+      let source = Source srcFile srcContent
+      withEither (compileSCPipe o source) (run' o source)
+    writeOutput' Nothing lines = putStrLn lines
+    writeOutput' (Just file) lines = writeFile file lines
+    writeOutput = writeOutput' . outputFile
+    doDumpSC   o source prog  = writeOutput o $ ("-- dump sc --\n" <>)    . unlines $ intersperse "\n" $ prettySC             <$> fst prog
+    doDumpCore o source cores = writeOutput o $ ("-- dump core -- \n" <>) . unlines $ intersperse "\n" $ prettyCoreCombinator <$> cores
+    run' o source irs
+      | dumpCore o = doDumpCore o source (irCore      irs) >> run' (o { dumpCore = False }) source irs
+      | dumpSC   o = doDumpSC   o source (irSCProgram irs) >> run' (o { dumpSC   = False }) source irs
+      | otherwise = withEither (compileGCodePipe source $ irSCProgram irs) $ \instrs ->
+        writeOutput o $ unlines $ printGCode instrs
+
 
