@@ -18,16 +18,16 @@ import           Pipe
 builtinTys :: [(Name, Type)]
 builtinTys = fmap (\(a, _, c) -> (a, c)) builtinCombinatorSignatures
 
-makeToplevelLet :: [[CoreCombinator]] -> CoreExpr
-makeToplevelLet = L.foldr ELet (EVar "main")
+makeToplevelLet :: [CoreCombinator] -> CoreExpr
+makeToplevelLet = flip ELet (EVar "main")
 
 nameOf :: CoreCombinator -> Name
 nameOf (CoreCombinator name _ _) = name
 
-infer :: ConstrsTable -> Pipe ErrorMessage [[CoreCombinator]] Type
-infer cs grs = runTI cs $ do ass  <- deriveAssumps cs
+infer :: ConstrsTable -> Pipe ErrorMessage [CoreCombinator] Type
+infer cs ccs = runTI cs $ do ass  <- deriveAssumps cs
                              ass' <- builtinAssumps ass builtinTys
-                             inferE ass' $ makeToplevelLet grs
+                             inferE ass' $ makeToplevelLet ccs
 
 type Subst = Map Name Type
 
