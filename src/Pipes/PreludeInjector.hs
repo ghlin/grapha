@@ -2,6 +2,7 @@
 
 module Pipes.PreludeInjector
   ( injectPrelude
+  , injectDataTypes
   ) where
 
 
@@ -12,10 +13,12 @@ import           Pipes.Parser
 import           Pipe
 import           Misc
 
+injectDataTypes :: Pipe ErrorMessage Program Program
+injectDataTypes prog = return $ prog { dataTypeDefs = preludeDataTypes <> dataTypeDefs prog }
+
 injectPrelude :: Pipe ErrorMessage Program Program
 injectPrelude prog = do Program preludeC _ preludeI <- parse $ Source "<prelude>" preludeSource
-                        return $ prog { dataTypeDefs   = preludeDatatypes <> dataTypeDefs   prog
-                                      , combinatorDefs = preludeC         <> combinatorDefs prog
+                        return $ prog { combinatorDefs = preludeC         <> combinatorDefs prog
                                       , infixDefs      = preludeI         <> infixDefs      prog
                                       }
 
@@ -25,8 +28,8 @@ mkTupleDef arity = let name = tupleCon arity
                        con  = ProductDef name $ TVar <$> vars
                     in DataTypeDef name vars [con]
 
-preludeDatatypes :: [DataTypeDef]
-preludeDatatypes = [list, bool, int, string, char, unit] <> tuples
+preludeDataTypes :: [DataTypeDef]
+preludeDataTypes = [list, bool, int, string, char, unit] <> tuples
   where
     list   = DataTypeDef "[]" ["a"] [nil, cons]
     nil    = ProductDef  "[]" []
@@ -48,6 +51,13 @@ preludeSource :: String
 preludeSource = [r|
 
 id x = x
+
+const x y = x
+
+compose f g = λx -> f (g x)
+
+infixl 5 .
+x . y = compose x y
 
 infixl 3 ||
 infixl 4 &&
@@ -88,6 +98,9 @@ tail (x::xs) = []
 
 concat []      ys = ys
 concat (x::xs) ys = x::concat xs ys
+
+infixl 4 ++
+x ++ y = x `concat` y
 
 reverse ins = let rev acc ys = case ys of
                                  []    -> acc
