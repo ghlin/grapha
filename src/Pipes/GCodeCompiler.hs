@@ -152,7 +152,7 @@ compileE p d = r
                                      instr $ GLabel l1
                                      compileE p d e
                                      instr $ GLabel l2
-    r (SCLetRec bindings body)  = do let p' = foldr (:) p $ (fst <$> bindings) `zip` ((+ 1) <$> [1..])
+    r (SCLetRec bindings body)  = do let p' = foldr (:) p $ (fst <$> bindings) `zip` ((+ d) <$> [1..])
                                      let d' = d + length bindings
                                      compileLetRec p' d' $ snd <$> bindings
                                      compileE p' d' body
