@@ -114,7 +114,7 @@ liftE s (ELet [CoreCombinator f ps e] body) = liftE s $ ELet [CoreCombinator f [
 liftE s (ELet bs body) = do let ps = combinatorToPair <$> bs
                             let fns  = fst <$> ps  -- binding左侧名字
                             let s' = s `union` fns
-                            rps  <- mapM (liftE s') $ snd <$> ps
+                            rps  <- forM ps $ \(fn, fe) -> liftE (fn:s) fe
                             let rhss = fst <$> rps -- binding右侧表达式
                             let fvss = snd <$> rps -- 自由变量
                             (body', fvbs) <- liftE s' body
