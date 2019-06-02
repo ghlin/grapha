@@ -146,17 +146,17 @@ termP' = litP <|> varP <|> conP' <|> wildcardP <|> listP <|> try tupleP <|> pare
 
 -- | expression parser
 expr :: P Expression
-expr = ifE <|> try letE <|> caseE <|> lamE <|> expr'
+expr = ifE <|> letE <|> caseE <|> lamE <|> expr'
 
 litE :: P Expression
 litE = ELit <$> literal
 
 varE :: P Expression
-varE = EVar <$> (identV <|> identT)
+varE = EVar <$> (identV <|> identT <|> try (parens $ identO <|> identC))
 
 lamE :: P Expression
-lamE = ELam <$> (backslash *> some pattern_)
-            <*> (arrowR    *> expr)
+lamE = ELam <$> ((backslash <|> symbol "λ") *> some pattern_)
+            <*> (lexemeN arrowR             *> expr)
 
 ifE :: P Expression
 ifE = do
@@ -275,7 +275,7 @@ combinatorNameC = parens identO <|> identV
 combinatorDef :: P CombinatorDef
 combinatorDef = do
   (name, args) <- combinatorLHS
-  body <- equalsign *> expr
+  body <- lexemeN equalsign *> expr
   return $ CombinatorDef name args body
 
 -- | data type
