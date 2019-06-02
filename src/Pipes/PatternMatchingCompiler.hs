@@ -23,7 +23,7 @@ groupToplevelBindings = g [] [] Nothing
                                                           else g (s <> [c]) [d] (Just n) ds
 
 splitLetBindings :: [[LetBinding]] -> ([[LetBinding]], [[LetBinding]])
-splitLetBindings = split (isPatternBinding . head) . filter (not . null)
+splitLetBindings = split (isPatternBinding . head)
   where isPatternBinding (LetBinding PatternBinding {} _) = True
         isPatternBinding _                                = False
 
@@ -34,7 +34,7 @@ groupLetBindings = g [] [] Nothing
         g s c Nothing  (d@(LetBinding (CombinatorBinding k _) _):ds) = g s [d] (Just k) ds
         g s c (Just n) (d@(LetBinding (CombinatorBinding k _) _):ds) = if n == k
                                                                            then g s (c <> [d])   (Just n) ds
-                                                                           else g (s <> [c]) [d] (Just n) ds
+                                                                           else g (s <> [c]) [d] (Just k) ds
 
 fromLetBinding :: LetBinding -> CombinatorDef
 fromLetBinding (LetBinding (CombinatorBinding f ps) e) = CombinatorDef f ps e
