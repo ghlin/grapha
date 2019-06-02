@@ -43,6 +43,8 @@ prettyTy t = pp $ flattenTy t
     pp [TCon "->", l, r]             = ppl (flattenTy l) <> " -> " <> prettyTy r
     pp (TCon v : ts) | head v == '(' = parens $ intercalate ", " $ fmap prettyTy ts
     pp (TCon v : ts)                 = intercalate " " $ v : fmap (ppl . flattenTy) ts
+    pp [TVar v] = v
+    pp x = show x
 
     ppl [TCon "->", l, r] = parens $ ppl (flattenTy l) <> " -> " <> prettyTy r
     ppl t                 = pp t
