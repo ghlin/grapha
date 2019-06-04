@@ -76,9 +76,6 @@ progromPipes o = parse
 constrPipes :: Pipe ErrorMessage Program ConstrsTable
 constrPipes = collectConstrs . dataTypeDefs
 
-builtins :: [(Name, Int)]
-builtins = fmap (\(a, b, _) -> (a, b)) builtinCombinatorSignatures
-
 data InternalReps
   = InternalReps
     { irProgram   :: Program
@@ -94,9 +91,10 @@ compileSCPipe o s = do prog   <- progromPipes o s
                        unless (skipTypeChecking o) $ void $ infer ct ccs -- this is really slow...
                        scProg <- liftCombinators builtins ct ccs
                        return $ InternalReps prog ccs scProg
+                         where builtins = fmap (\(a, b, _, _) -> (a, b)) builtinCombinatorSignatures
 
 compileGCodePipe :: Source -> Pipe ErrorMessage SCProgram [GInstr]
-compileGCodePipe s (scs, entry) = do instrs       <- compileProgram scs
+compileGCodePipe s (scs, entry) = do instrs       <- compileProgram (scs, builtins)
                                      let header = [ "Compiled from " <> sourceFileName s
                                                   , "------ original content: ------" ]
                                                   <> lines (sourceFileContent s)
@@ -104,12 +102,13 @@ compileGCodePipe s (scs, entry) = do instrs       <- compileProgram scs
                                                   [ "------- ------- ------- -------" ]
                                      let more   = GComment <$> header
                                      return $ more <> [GEntry entry] <> instrs
+                                       where builtins = fmap (\(a, _, _, b) -> (a, b)) builtinCombinatorSignatures
 
 withEither :: Either ErrorMessage b -> (b -> IO ()) -> IO ()
+withEither (Right e) f = f e
 withEither (Left  e) f = do hPutStrLn stderr e
                             hPutStrLn stderr "Can't compile, good luck then..."
                             exitWith $ ExitFailure 1
-withEither (Right e) f = f e
 
 main :: IO ()
 main = execParser opts >>= run

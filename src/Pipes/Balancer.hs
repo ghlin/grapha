@@ -34,9 +34,9 @@ balance' db = r
     r (EListLiteral  es ) = EIndir $ EListLiteral $ r <$> es
     r (ETupleLiteral es ) = EIndir $ ETupleLiteral $ r <$> es
     r (EQuoted       e  ) = EIndir $ EQuoted $ r e
-    r (EBinary n lhs rhs) = r' $ EBinary n (r lhs) rhs
+    r (EBinary n lhs rhs) = r' $ EBinary n (r lhs) (r rhs)
     r e                   = e
-    r' e@(EBinary α (EBinary β a b) c) | checkAssoc db α β == AShouldRotate = EBinary β a $ r $ EBinary α b c
+    r' e@(EBinary α (EBinary β a b) c) | checkAssoc db α β == AShouldRotate = r $ EBinary β a $ r $ EBinary α b c
     r' e = e
 
 -- | 去除EIndir和EQuoted

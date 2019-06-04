@@ -91,10 +91,11 @@ string = char '"' *> manyTill L.charLiteral (char '"')
 
 character :: P Char
 character = char '\'' *> (escaped <|> L.charLiteral) <* char '\''
-  where escaped = escape <$> (lookAhead (char '\\') *> L.charLiteral)
+  where escaped = escape <$> (lookAhead (char '\\') *> char '\\' *> L.charLiteral)
         escape 't' = '\t'
         escape 'n' = '\n'
         escape 'r' = '\r'
+        escape  x  = x
 
 surround :: String -> String -> P a -> P a
 surround l r = between (symbol l) (symbol r)

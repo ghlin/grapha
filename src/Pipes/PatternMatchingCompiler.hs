@@ -28,7 +28,7 @@ splitLetBindings = split (isPatternBinding . head)
         isPatternBinding _                                = False
 
 groupLetBindings :: [LetBinding] -> [[LetBinding]]
-groupLetBindings = g [] [] Nothing
+groupLetBindings = filter (not . null) . g [] [] Nothing
   where g s c _ []    = s <> [c]
         g s c l        (d@(LetBinding PatternBinding {} _):ds)       = g ([d]:s) c l ds
         g s c Nothing  (d@(LetBinding (CombinatorBinding k _) _):ds) = g s [d] (Just k) ds

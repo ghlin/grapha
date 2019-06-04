@@ -24,6 +24,8 @@ data GInstr
   | GGlobalStart Name Int
   | GGlobalEnd
   | GUnwind
+  | GEval
+  | GReturn
   | GComment     String
   | GEntry       Name
   deriving (Show, Eq)

@@ -16,7 +16,7 @@ import           Misc
 import           Pipe
 
 builtinTys :: [(Name, Type)]
-builtinTys = fmap (\(a, _, c) -> (a, c)) builtinCombinatorSignatures
+builtinTys = fmap (\(a, _, c, _) -> (a, c)) builtinCombinatorSignatures
 
 makeToplevelLet :: [CoreCombinator] -> CoreExpr
 makeToplevelLet = flip ELet (EVar "main")

@@ -41,4 +41,6 @@ pp (GEntry      e)    = singleS "entry"       e
 pp (GComment    s)    = "; " <> s
 pp GGlobalEnd         = "globalend"
 pp GUnwind            = "unwind"
+pp GEval              = "eval"
+pp GReturn            = "return"
 pp GMkApp             = "mkapp"

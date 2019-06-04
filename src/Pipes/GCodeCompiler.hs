@@ -16,8 +16,8 @@ import           Lang.Literal
 import           Misc
 import           Pipe
 
-compileProgram :: Pipe ErrorMessage [SC] [GInstr]
-compileProgram scs = runM (CState 0) $ compileProgram' scs
+compileProgram :: Pipe ErrorMessage ([SC], [(Name, [Bool])]) [GInstr]
+compileProgram (scs, bs) = runM (CState 0 bs) $ compileProgram' scs
 
 compileProgram' :: [SC] -> M ()
 compileProgram' scs = do let builtins = unions $ extractBuiltins <$> scs
@@ -61,9 +61,10 @@ extractTests (SC _ _ e) = extract ex e
 unions :: Eq a => [[a]] -> [a]
 unions = foldr union []
 
-newtype CState
+data CState
   = CState
-    { supply :: Int
+    { supply   :: Int
+    , builtins :: [(Name, [Bool])]
     }
 
 type M a = E.ExceptT ErrorMessage
@@ -145,7 +146,7 @@ compileE p d = r
     r (SCIf c t e)              = do l1 <- acquireLabel
                                      l2 <- acquireLabel
                                      compileE p d c
-                                     instr   GUnwind
+                                     instr   GEval
                                      instr $ GJumpFalse l1
                                      compileE p d t
                                      instr $ GJump l2
@@ -165,11 +166,19 @@ compileLetRec p d rhss = do let n = length rhss
                               compileE p d e
                               instr $ GUpdate $ n - r
 
+lookupStrictness :: Name -> M [Bool]
+lookupStrictness k = do bs <- lift $ lift $ T.gets builtins
+                        case lookup k bs of
+                          Nothing -> E.throwE $ "Unknown builtin: " <> k
+                          Just st -> return st
+
 compileBuiltin :: (Name, Int) -> M ()
-compileBuiltin (name, arity) = do instr $ GGlobalStart (builtin name) arity
-                                  forM_ [0 .. arity - 1] $ \n -> do
+compileBuiltin (name, arity) = do strictness <- lookupStrictness name
+                                  instr $ GGlobalStart (builtin name) arity
+                                  let strictArgs = fst <$> filter snd ([0 .. arity - 1] `zip` strictness)
+                                  forM_ strictArgs $ \n -> do
                                     instr $ GPush n
-                                    instr   GUnwind
+                                    instr   GEval
                                     instr $ GUpdate $ n + 1
                                   instr $ GBuiltin name arity
                                   instr $ GUpdate 1
@@ -183,7 +192,7 @@ compilePack (tag, arity) = do instr $ GGlobalStart (pack tag) arity
 
 compilePick :: Int -> M ()
 compilePick f = do instr $ GGlobalStart (pick f) 1
-                   instr   GUnwind
+                   instr   GEval
                    instr $ GPick   f
                    instr $ GUpdate 1
                    instr   GUnwind
@@ -191,10 +200,8 @@ compilePick f = do instr $ GGlobalStart (pick f) 1
 
 compileTest :: Name -> M ()
 compileTest tag = do instr $ GGlobalStart (test tag) 1
-                     instr   GUnwind
+                     instr   GEval
                      instr $ GTest   tag
                      instr $ GUpdate 1
                      instr   GGlobalEnd
-
-
 
