@@ -1,145 +1,64 @@
 #include "vm.h"
+#include "cell.h"
+#include "tag-pool.h"
+#include "allocator.h"
+#include "instruction.h"
+#include "load.h"
 #include "misc.h"
 
 namespace gi {
 
-static bool     g_dump_steps    = false;
-static Seq<Str> g_dump_sc_names;
+#define dump_cell(cell) fmt::print(stderr, "{}\n", pretty_print_tree(#cell " =", cell))
 
-extern void set_dump_steps(bool dump_steps)   { g_dump_steps = dump_steps;       }
-extern void add_dump_sc_name(Str const &name) { g_dump_sc_names.push_back(name); }
-
-struct Context;
-struct Stack;
-
-node_ref_t interp_builtin( char const *name
-                         , u32 arity
-                         , node_ref_t *args
-                         , node_ref_t  result
-                         , Context    *ctx
-                         , Stack      *stk);
-static inline
-void update_cell( node_ref_t dst
-                , node_ref_t src)
+// {{{ the runtime stack
+struct vm_stack_s
 {
-  if (dst == src) return;
-  std::memcpy(dst, src, sizeof *dst);
-}
-
-static inline
-bool check_pack_true(node_ref_t cell)
-{
-  return cell->t == N_Pack
-    &&   std::strcmp(cell->d.tag, "True") == 0;
-}
-
-static inline
-void set_pack_true(node_ref_t cell)
-{
-  cell->t           = N_Pack;
-  cell->d.tag       = "True";
-  cell->d.fields[0] = nullptr;
-}
-
-static inline
-void set_pack_false(node_ref_t cell)
-{
-  cell->t           = N_Pack;
-  cell->d.tag       = "False";
-  cell->d.fields[0] = nullptr;
-}
-
-static inline
-void set_pack_boolean(node_ref_t cell, bool tf)
-{
-  return tf ? set_pack_true(cell) : set_pack_false(cell);
-}
-
-static inline
-bool should_dump_sc(char const *name)
-{
-  for (auto &dump_sc: g_dump_sc_names) {
-    if (std::strcmp(dump_sc.c_str(), name) == 0) return true;
-  }
-  return false;
-}
-
-struct NodeAllocator {
-  Seq<Ptr<Node>>   pool;
-
-  node_ref_t acquire(NodeType t)
-  {
-    auto n = std::make_unique<Node>(Node { t, {} });
-    auto p = n.get();
-    pool.emplace_back(std::move(n));
-    return p;
-  }
-
-  node_ref_t makeapp(node_ref_t *stack)
-  {
-    auto app = acquire(N_App);
-    app->d.lhs = stack[1];
-    app->d.rhs = stack[0];
-    return app;
-  }
-
-  node_ref_t makeobj(char const *tag, u32 arity, node_ref_t *fields)
-  {
-    auto pack = acquire(N_Pack);
-    pack->d.tag = tag;
-    for (u32 i = 0; i != arity; ++i)
-      pack->d.fields[arity - i - 1] = fields[i];
-    pack->d.fields[arity] = nullptr;
-    return pack;
-  }
-
-  node_ref_t makeproc(char const *name, u32 arity, GInstrs const *program)
-  {
-    auto proc = acquire(N_Proc);
-
-    proc->d.name    = name;
-    proc->d.arity   = arity;
-    proc->d.program = program;
-
-    return proc;
-  }
-};
-
-
-struct Stack {
-  node_ref_t *base;
+  cell_ref_t *base;
   u32         size = 0;
 
-  node_ref_t top() {
+  cell_ref_t top()
+  {
     gi_assert(size != 0);
     return base[size - 1];
   }
 
-  node_ref_t pop() {
+  cell_ref_t pop()
+  {
     gi_assert(size != 0);
     return base[--size];
   }
 
-  void pop(u32 n) {
+  void pop(u32 n)
+  {
     gi_assert(size >= n);
     size -= n;
   }
 
-  void push(node_ref_t p) {
+  void push(cell_ref_t p)
+  {
     base[size++] = p;
   }
 
-  node_ref_t r(u32  i) {
+  cell_ref_t r(u32  i)
+  {
     gi_assert(i < size);
     return base[size - i - 1];
   }
 
-  node_ref_t at(u32 i) {
+  cell_ref_t at(u32 i)
+  {
     gi_assert(i < size);
     return base[i];
   }
 
-  node_ref_t *peek(u32 n) {
+  void update(u32 i, cell_ref_t new_cell)
+  {
+    gi_assert(i < size);
+    base[size - i - 1] = new_cell;
+  }
+
+  cell_ref_t *peek(u32 n)
+  {
     try {
       gi_assert(n <= size);
     } catch (...) {
@@ -148,372 +67,521 @@ struct Stack {
     }
     return base + size - n;
   }
-};
 
-void dump_stack(Stack *s)
-{
-  fmt::print(stderr, "==== stack dump ====\n");
-  for (u32 i = 0; i != s->size; ++i) {
-    fmt::print(stderr, "{}\n", pretty_print_tree(s->at(i), fmt::format("{:>2}", i)));
+  vm_stack_s fork()
+  {
+    return vm_stack_s { base + size, 0 };
   }
-}
 
+  void dump() const
+  {
+    gi_log("==============[ dump start ]=============\n");
+    gi_log("base = {}, size = {}\n", (void *)base, size);
+    for (u32 i = 0; i != size; ++i) {
+      gi_log("{}\n", pretty_print_tree(fmt::format("{:>2}", i), base[i]));
+    }
+  }
+};
+// }}}
 
 static inline
-node_ref_t find_redux(node_ref_t root)
+cell_ref_t find_redux(cell_ref_t root)
 {
   auto left_most = root;
-  u32  depth = 0;
-  while (left_most->t == N_App) {
-    left_most = left_most->d.lhs;
+  u32  depth     = 0;
+  while (left_most->t == CT_APP) {
+    left_most = left_most->d.fun;
     ++depth;
   }
 
-  gi_assert(left_most->t == N_Proc);
-
-  auto arity   = left_most->d.arity;
-
-  if (depth < arity)
+  if (left_most->t != CT_PROC) {
+    // WHNF
     return nullptr;
+  }
+
+  auto arity = left_most->d.proc->arity;
+
+  if (depth < arity) {
+    // WHNF
+    return nullptr;
+  }
 
   auto through = depth - arity;
   auto redux   = root;
-
   while (through--)
-    redux = redux->d.lhs;
+    redux = redux->d.fun;
 
   return redux;
 }
 
 static inline
-node_ref_t unwind(Stack *s)
+cell_ref_t unwind_stack(vm_stack_s *s, cell_ref_t spine)
 {
-  auto walk = find_redux(s->top());
-  if (!walk) return nullptr;
+  if (!spine) return nullptr;
 
-  node_ref_t proc = nullptr;
-
-  for (s->pop(), s->push(walk); walk->t == N_App; walk = walk->d.lhs) {
-    s->push(walk->d.rhs);
-    proc = walk->d.lhs;
+  for (s->push(spine); spine->t == CT_APP; spine = spine->d.fun) {
+    s->push(spine->d.arg);
   }
 
-  return proc;
+  gi_assert(spine->t == CT_PROC);
+
+  return spine;
 }
 
-#define RUNTIME_STACK_SIZE (2048 * 10 * 10)
-
-struct Context
+struct vm_frame_s
 {
-  SectionMap const &sections;
-  node_ref_t        runtime_stack[RUNTIME_STACK_SIZE];
-  NodeAllocator     allocator;
+  u32           pc;
+  proc_s const *proc;
+  vm_stack_s    stack;
+  cell_ref_t    last_unwind_root = nullptr;
+};
 
-  size_t            steps = 0;
+struct vm_tags_s
+{
+  char const *int_eq;
+  char const *int_lt;
+  char const *int_gt;
+  char const *int_pls;
+  char const *int_mns;
+  char const *int_mul;
+  char const *int_div;
+  char const *put_char;
+  char const *get_char;
+  char const *put_int;
+  char const *get_int;
+  char const *undefined;
+  char const *seq;
+  char const *from_io;
 
-  SC const &lookup(char const *name)
+  char const *tru;
+  char const *fls;
+  char const *unit;
+};
+
+vm_tags_s initial_tags(tag_pool_s *tag_pool)
+{
+  vm_tags_s tags;
+
+  tags.int_eq    = tag_pool->assign("==");
+  tags.int_lt    = tag_pool->assign("<");
+  tags.int_gt    = tag_pool->assign(">");
+  tags.int_pls   = tag_pool->assign("+");
+  tags.int_mns   = tag_pool->assign("-");
+  tags.int_mul   = tag_pool->assign("*");
+  tags.int_div   = tag_pool->assign("/");
+  tags.put_char  = tag_pool->assign("put-char");
+  tags.get_char  = tag_pool->assign("get-char");
+  tags.put_int   = tag_pool->assign("put-int");
+  tags.get_int   = tag_pool->assign("get-int");
+  tags.undefined = tag_pool->assign("undefined");
+  tags.seq       = tag_pool->assign("seq");
+  tags.from_io   = tag_pool->assign("from-io");
+
+  tags.fls       = tag_pool->assign("False");
+  tags.tru       = tag_pool->assign("True");
+  tags.unit      = tag_pool->assign("()");
+
+  return tags;
+}
+
+struct vm_session_s
+{
+  program_s               *program;
+  tag_pool_s              *tag_pool;
+  vm_allocator_s          *allocator;
+  std::vector<vm_frame_s>  frames;
+  cell_ref_t               last_step_result = nullptr;
+  vm_tags_s                tags;
+  vm_statistics_s          stat;
+  vm_eval_options_s        opts;
+
+  proc_s const *lookup_proc(char const *name) const
   {
-    auto found = sections.find(name);
-    if (found == sections.cend()) {
-      fmt::print(stderr, "lookup: sc [{}] not found.\n", name);
-      throw std::runtime_error("unknown sc");
+    auto found = program->proc_table.find(name);
+    if (found == program->proc_table.end()) {
+      fmt::print(stderr, "Unknown proc: {}\n", name);
+      throw std::runtime_error("unknown proc");
     }
-
-    return found->second;
+    return &found->second;
   }
 };
 
-#define HANDLE(name) void interp_##name( __attribute__((unused)) Context          *c   \
-                                       , __attribute__((unused)) Stack            *s   \
-                                       , __attribute__((unused)) size_t           *ppc \
-                                       , __attribute__((unused)) GInstrType        t   \
-                                       , __attribute__((unused)) GInstrData const &d   \
-                                       )
+#define maybe_unused __attribute__((unused))
+#define INSTR_HANDLER_NAME(instr) interp_##instr
+#define HANDLE_INSTR(instr) void INSTR_HANDLER_NAME(instr) ( maybe_unused vm_session_s const       *vm  \
+                                                           , maybe_unused vm_stack_s               *s   \
+                                                           , maybe_unused u32                      *ppc \
+                                                           , maybe_unused instruction_type_t        t   \
+                                                           , maybe_unused instruction_data_s const &d)
 
-using interp_func_t = void (*)( Context          *ctx
-                              , Stack            *s
-                              , size_t           *ppc
-                              , GInstrType        t
-                              , GInstrData const &d
-                              );
+using instr_handler_t = void (*) ( vm_session_s const       *
+                                 , vm_stack_s               *
+                                 , u32                      *
+                                 , instruction_type_t
+                                 , instruction_data_s const &
+                                 );
 
-
-node_ref_t interp(Context *ctx, Stack *s, char const *sc_name, GInstrs const *program);
-
-HANDLE(GI_PushRef)
+HANDLE_INSTR(IT_PUSH_REF)
 {
   s->push(s->r(d.n));
 }
 
-HANDLE(GI_PushPrim)
+HANDLE_INSTR(IT_PUSH_INT)
 {
-  auto prim = c->allocator.acquire(N_Prim);
-  prim->d.value = d.value;
+  auto prim = vm->allocator->acquire(CT_PRIM);
+  prim->d.val = d.val;
   s->push(prim);
 }
 
-HANDLE(GI_PushGlobal)
+HANDLE_INSTR(IT_PUSH_GLOBAL)
 {
-  auto &sc = c->lookup(d.name);
-
-  s->push(c->allocator.makeproc(sc.name.c_str(), sc.arity, &sc.program));
+  auto cell = vm->allocator->acquire(CT_PROC);
+  cell->d.proc = vm->lookup_proc(d.name);
+  cell->d.name = d.name;
+  s->push(cell);
 }
 
-HANDLE(GI_Unwind)
+HANDLE_INSTR(IT_MKAPP)
 {
-  auto target = s->top();
-  if (target->t == N_Hole) {
-    throw std::runtime_error("Attempt to evaluate a hole node");
-  } else if (   target->t == N_Prim
-            ||  target->t == N_Pack
-            || (target->t == N_Proc && target->d.arity != 0)) {
-    return;
-  } else if (target->t == N_Proc) /* of zero arity */ {
-    auto result = interp(c, s, target->d.name, target->d.program); // the stack was unchanged.
-    update_cell(s->top(), result);
-  } else if (target->t == N_App) {
-    auto proc = unwind(s);
-    if (!proc) return;
-
-    gi_assert(proc->t == N_Proc);
-
-    auto result = interp(c, s, proc->d.name, proc->d.program);
-    update_cell(s->top(), result);
-  } else {
-    throw std::runtime_error("what happened?");
-  }
-}
-
-HANDLE(GI_MakeAppl)
-{
-  auto app = c->allocator.makeapp(s->peek(2));
-  s->pop(2);
+  auto app = vm->allocator->acquire(CT_APP);
+  app->d.fun = s->pop();
+  app->d.arg = s->pop();
   s->push(app);
 }
 
-HANDLE(GI_Update)
+HANDLE_INSTR(IT_UPDATE)
 {
-  if (d.n == 0) return;
-  update_cell(s->r(d.n), s->top());
+  vm->allocator->overwrite_cell(s->r(d.n), s->top());
+  s->update(d.n, s->top());
   s->pop();
 }
 
-HANDLE(GI_Pop)
+HANDLE_INSTR(IT_POP)
 {
   s->pop(d.n);
 }
 
-HANDLE(GI_Slide)
+HANDLE_INSTR(IT_SLIDE)
 {
-  auto save = s->pop();
+  auto top = s->pop();
   s->pop(d.n);
-  s->push(save);
+  s->push(top);
 }
 
-HANDLE(GI_Alloc)
+HANDLE_INSTR(IT_ALLOC)
 {
   for (u32 i = 0; i != d.n; ++i) {
-    s->push(c->allocator.acquire(N_Hole));
+    s->push(vm->allocator->acquire(CT_HOLE));
   }
 }
 
-HANDLE(GI_Jump)
+HANDLE_INSTR(IT_JUMP)
 {
-  *ppc = d.offset;
+  *ppc = d.off;
 }
 
-HANDLE(GI_JumpFalse)
+HANDLE_INSTR(IT_JUMP_FALSE)
 {
   auto cond = s->pop();
-  auto is_pack_of_true = check_pack_true(cond);
-  if (!is_pack_of_true) *ppc = d.offset;
+  gi_assert(cond->t == CT_PACK);
+  if (cond->d.tag[0] == 'F') /* False */ {
+    *ppc = d.off;
+  }
 }
 
-HANDLE(GI_MakeObj)
+HANDLE_INSTR(IT_PACK)
 {
-  auto pack = c->allocator.makeobj(d.tag, d.arity, s->base + s->size - d.arity);
+  auto pack = vm->allocator->acquire_pack(d.tag, d.arity);
+  auto args = s->peek(d.arity);
+
+  for (u32 i = 0; i != d.arity; ++i) {
+    pack->d.pack->fields[d.arity - i - 1] = args[i];
+  }
+
   s->pop(d.arity);
   s->push(pack);
 }
 
-HANDLE(GI_TestObj)
+HANDLE_INSTR(IT_TEST)
 {
-  auto pack   = s->pop();
-  auto result = c->allocator.acquire(N_Pack);
+  auto pack = s->pop();
+  gi_assert(pack->t == CT_PACK);
+  auto result = vm->allocator->acquire_pack( pack->d.tag == d.tag ? vm->tags.tru : vm->tags.fls
+                                           , 0);
 
-  set_pack_boolean(result, strcmp(pack->d.tag, d.tag) == 0);
   s->push(result);
 }
 
-HANDLE(GI_SelComp)
+HANDLE_INSTR(IT_PICK)
 {
-  auto pack = s->pop();
-  auto field = pack->d.fields[d.field];
-  s->push(field);
+  auto pack  = s->pop();
+
+  gi_assert(pack->t == CT_PACK);
+  gi_assert(pack->d.pack != nullptr);
+  gi_assert(pack->d.pack->arity > d.n);
+
+  s->push(pack->d.pack->fields[d.n]);
 }
 
-HANDLE(GI_Builtin)
+HANDLE_INSTR(IT_BUILTIN)
 {
   auto args = s->peek(d.arity);
   s->pop(d.arity);
-  auto result = interp_builtin( d.name
-                              , d.arity
-                              , args
-                              , c->allocator.acquire(N_Prim)
-                              , c
-                              , s
-                              );
+
+#define MATCH(x)  (d.tag == vm->tags.x)
+#define arg(n)    (args[d.arity - n])
+#define argval(n) (arg(n)->d.val)
+
+  auto result = vm->allocator->acquire(CT_HOLE);
+
+  if (MATCH(int_eq)) {
+    result->t      = CT_PACK;
+    result->d.tag  = (argval(1) == argval(2)) ? vm->tags.tru : vm->tags.fls;
+    result->d.pack = nullptr;
+  } else if (MATCH(int_lt)) {
+    result->t      = CT_PACK;
+    result->d.tag  = (argval(1) < argval(2)) ? vm->tags.tru : vm->tags.fls;
+    result->d.pack = nullptr;
+  } else if (MATCH(int_gt)) {
+    result->t      = CT_PACK;
+    result->d.tag  = (argval(1) > argval(2)) ? vm->tags.tru : vm->tags.fls;
+    result->d.pack = nullptr;
+  } else if (MATCH(int_mns)) {
+    result->t      = CT_PRIM;
+    result->d.val  = argval(1) - argval(2);
+  } else if (MATCH(int_pls)) {
+    result->t      = CT_PRIM;
+    result->d.val  = argval(1) + argval(2);
+  } else if (MATCH(int_mul)) {
+    result->t      = CT_PRIM;
+    result->d.val  = argval(1) * argval(2);
+  } else if (MATCH(int_div)) {
+    result->t      = CT_PRIM;
+    result->d.val  = argval(1) / argval(2);
+  } else if (MATCH(get_char)) {
+    result->t      = CT_PRIM;
+    result->d.val  = std::getchar();
+  } else if (MATCH(get_int)) {
+    result->t      = CT_PRIM;
+    std::scanf("%d", &result->d.val);
+  } else if (MATCH(put_char)) {
+    std::putchar(argval(1));
+    result->t      = CT_PACK;
+    result->d.pack = nullptr;
+    result->d.tag  = vm->tags.unit;
+  } else if (MATCH(put_int)) {
+    std::printf("%d", argval(1));
+    result->t      = CT_PACK;
+    result->d.pack = nullptr;
+    result->d.tag  = vm->tags.unit;
+  } else if (MATCH(seq)) {
+    vm->allocator->overwrite_cell(result, arg(2));
+  } else if (MATCH(from_io)) {
+    vm->allocator->overwrite_cell(result, arg(1));
+  } else if (MATCH(undefined)) {
+    throw std::runtime_error("«eval undefined»");
+  } else {
+    gi_log("UNIMPLEMENTED: {}\n", d.name);
+    throw std::runtime_error("UNIMPLEMENTED BUILTIN");
+  }
+#undef MATCH
+#undef arg
+#undef argval
+
   s->push(result);
 }
 
-#undef  HANDLE
-#define HANDLE(name) &interp_##name
+static instr_handler_t handlers[] = { nullptr /* IT_UNUSED */
+                                    , INSTR_HANDLER_NAME(IT_PUSH_REF)
+                                    , INSTR_HANDLER_NAME(IT_PUSH_INT)
+                                    , INSTR_HANDLER_NAME(IT_PUSH_GLOBAL)
+                                    , INSTR_HANDLER_NAME(IT_BUILTIN)
+                                    , INSTR_HANDLER_NAME(IT_PACK)
+                                    , INSTR_HANDLER_NAME(IT_PICK)
+                                    , INSTR_HANDLER_NAME(IT_TEST)
+                                    , INSTR_HANDLER_NAME(IT_MKAPP)
+                                    , INSTR_HANDLER_NAME(IT_UPDATE)
+                                    , INSTR_HANDLER_NAME(IT_POP)
+                                    , INSTR_HANDLER_NAME(IT_SLIDE)
+                                    , INSTR_HANDLER_NAME(IT_ALLOC)
+                                    , nullptr /* IT_LABEL */
+                                    , INSTR_HANDLER_NAME(IT_JUMP)
+                                    , INSTR_HANDLER_NAME(IT_JUMP_FALSE)
+                                    , nullptr /* IT_UNWIND */
+                                    , nullptr /* IT_EVAL */
+                                    , nullptr /* IT_COMMENT */
+                                    , nullptr /* IT_ENTRY   */
+                                    , nullptr /* IT_GLOBAL_START */
+                                    , nullptr /* IT_GLOBAL_END   */
+                                    };
 
-// MIND THE ORDER!!!
-static interp_func_t handlers[] = {
-  nullptr, /* GI_UNUSED */
-  HANDLE(GI_PushRef),
-  HANDLE(GI_PushPrim),
-  HANDLE(GI_PushGlobal),
-  HANDLE(GI_MakeAppl),
-  HANDLE(GI_Update),
-  HANDLE(GI_Pop),
-  HANDLE(GI_Slide),
-  HANDLE(GI_Alloc),
-  nullptr, /* GI_Label */
-  HANDLE(GI_Jump),
-  HANDLE(GI_JumpFalse),
-  HANDLE(GI_TestObj),
-  HANDLE(GI_MakeObj),
-  HANDLE(GI_SelComp),
-  HANDLE(GI_Builtin),
-  HANDLE(GI_Unwind),
-  nullptr, /* GI_GlobalStart */
-  nullptr, /* GI_GlobalEnd   */
-  nullptr  /* GI_Entry       */
-};
-
-node_ref_t interp(Context *ctx, Stack *s, char const *sc_name, GInstrs const *program)
+/** true for whnf, false for unwond */
+bool prepare_frame( cell_ref_t  root
+                  , vm_frame_s *this_frame
+                  , vm_frame_s *next_frame)
 {
-  size_t pc = 0, eop = program->size();
-  while (pc != eop) {
-    auto &[t, d] = program->at(pc);
+  next_frame->last_unwind_root = root;
+  auto spine = find_redux(root);
+  if (!spine) return true;
 
-    if (g_dump_steps || should_dump_sc(sc_name)) {
-      dump_stack(s);
-      gi_log("[{}] pc = {:>2} instr = {}\n", sc_name, pc, pretty_print_instr({ t, d }));
-      gi_log("\n");
+  next_frame->stack = this_frame->stack.fork();
+  next_frame->pc    = 0;
+
+  auto proc_cell   = unwind_stack(&next_frame->stack, spine);
+  next_frame->proc = proc_cell->d.proc;
+
+  return false;
+}
+
+/**
+ * true for return, false for grow
+ */
+bool exec_frame( vm_session_s *vm
+               , vm_frame_s   *this_frame
+               , vm_frame_s   *next_frame)
+{
+  while (this_frame->pc != this_frame->proc->instrs.size()) {
+    vm->stat.steps++;
+
+    auto &[t, d] = this_frame->proc->instrs.at(this_frame->pc);
+
+    gi_assert(static_cast<u32>(t) < IT_TYPE_MAX);
+
+    if (vm->opts.dump_instr) {
+      this_frame->stack.dump();
+      gi_log( "proc = {}, pc = {}/{}, instr = {}\n\n"
+            , this_frame->proc->name
+            , this_frame->pc
+            , this_frame->proc->instrs.size()
+            , pretty_print_instr({ t, d }));
     }
 
-    ++ctx->steps;
-    ++pc;
+    if (t == IT_EVAL) {
+      if (prepare_frame(this_frame->stack.top(), this_frame, next_frame)) {
+        this_frame->pc++;
+      } else {
+        return false;
+      }
+    } else if (t == IT_UNWIND) {
+      auto last_unwind_root = this_frame->last_unwind_root ?: this_frame->stack.top();
 
-    gi_assert(static_cast<int>(t) < GI_TYPE_END);
-    gi_assert(static_cast<int>(t) > 0);
-    gi_assert(t != GI_Label);
-    gi_assert(t != GI_GlobalStart);
-    gi_assert(t != GI_GlobalEnd);
-
-    auto handle = handlers[t];
-
-    gi_assert(handle != nullptr);
-
-    handle(ctx, s, &pc, t, d);
-  }
-
-  return s->top();
-}
-
-ginstr_prim_t interp(SectionMap const &sections, Str const &entry_name)
-{
-  Context ctx = { sections, {}, {} };
-  Stack   s   = { ctx.runtime_stack, 0 };
-  auto   &sc  = ctx.lookup(entry_name.c_str());
-
-  s.push(ctx.allocator.acquire(N_Hole));
-
-  auto r = interp(&ctx, &s, entry_name.c_str(), &sc.program);
-
-  fmt::print(stderr, "-- reduce steps:     {}\n", ctx.steps);
-  fmt::print(stderr, "-- memory allocated: {} cell(s), {} kb\n", ctx.allocator.pool.size(), ctx.allocator.pool.size() * sizeof (Node) / 1024);
-  fmt::print(stderr, "{}\n", pretty_print_tree(r, "-- interp returned: "));
-
-  if (r->t != N_Prim) {
-    fmt::print(stderr, "-- warning: program exited with non-integer object, fallback to 0");
-
-    return 0;
-  }
-
-  return r->d.value;
-}
-
-// runtime part
-node_ref_t interp_builtin( char const *name
-                         , u32         arity
-                         , node_ref_t *args
-                         , node_ref_t result
-                         , Context    *ctx
-                         , Stack      *stk)
-{
-#define CASE(x)    else if (std::strcmp(name, #x) == 0)
-#define CASE_(...) else if (__VA_ARGS__)
-#define DEFAULT    else
-#define SWITCH     if (false) { }
-#define V(n)       (A(n)->d.value)
-#define A(n)       (args[arity - (n)])
-
-  result->t = N_Prim;
-  SWITCH
-  CASE (==) { set_pack_boolean(result, V(1) == V(2)); }
-  CASE (-)  { result->d.value = V(1) -  V(2); }
-  CASE (+)  { result->d.value = V(1) +  V(2); }
-  CASE (*)  { result->d.value = V(1) *  V(2); }
-  CASE (/)  { result->d.value = V(1) /  V(2); }
-  CASE (put-char)   {
-    std::putchar(V(1));
-    result->d.value = 0;
-  }
-  CASE (put-int)   {
-    std::printf("%d", V(1));
-    result->d.value = 0;
-  }
-  CASE (get-char)  {
-    result->d.value = std::getchar();
-  }
-  CASE (get-int)  {
-    std::scanf("%d", &result->d.value);
-  }
-  CASE (undefined) {
-    fmt::print(stderr, "Bottom\n");
-    throw std::runtime_error("Bottom");
-  }
-  CASE (seq) {
-    GInstr dummy;
-    dummy.t = GI_UNUSED;
-
-    auto save_arg2 = A(2);
-    auto top = A(1);
-
-    while (true) {
-      auto caf = top->t == N_Proc && top->d.arity == 0;
-
-      if ((top->t != N_App && !caf) || !find_redux(top)) {
-        break;
+      if (prepare_frame(last_unwind_root, this_frame, this_frame)) {
+        this_frame->pc++;
+        gi_assert(this_frame->stack.size != 0);
       }
 
-      stk->push(top); // eval this to whnf...
-      interp_GI_Unwind(ctx, stk, nullptr, dummy.t, dummy.d);
-      stk->pop();
+      vm->allocator->overwrite_cell(last_unwind_root, this_frame->stack.top());
+    } else {
+      auto handle = handlers[static_cast<u32>(t)];
+      gi_assert(handle);
+
+      this_frame->pc++;
+      handle(vm, &this_frame->stack, &this_frame->pc, t, d);
+    }
+  }
+
+  gi_assert(this_frame->stack.size == 1);
+
+  return true;
+}
+
+vm_frame_s initial_frame(vm_session_s *vm, cell_ref_t *runtime_stack_memory)
+{
+  auto proc = vm->lookup_proc(vm->program->entry_proc_name);
+  runtime_stack_memory[0] = vm->allocator->acquire(CT_HOLE);
+  return { 0, proc, { runtime_stack_memory, 1 } };
+}
+
+cell_ref_t step_vm(vm_session_s *vm)
+{
+  vm_frame_s next_frame;
+  auto &this_frame = vm->frames.back();
+  if (exec_frame(vm, &this_frame, &next_frame)) {
+    auto result = this_frame.stack.top();
+    vm->frames.pop_back();
+    if (!vm->frames.empty()) {
+      vm->allocator->overwrite_cell(vm->frames.back().stack.top(), result);
+    }
+    return result;
+  } else {
+    vm->frames.push_back(next_frame);
+    return nullptr;
+  }
+}
+
+void exec_vm(vm_session_s *vm)
+{
+  vm->frames.push_back(initial_frame(vm, vm->opts.stack_buffer));
+  while (!vm->frames.empty()) {
+    if (vm->opts.dump_root) {
+      auto root = vm->frames.front().stack.top();
+      dump_cell(root);
+    }
+    vm->last_step_result = step_vm(vm);
+  }
+}
+
+struct vm_stack_objects_s: vm_root_objects_s
+{
+  vm_session_s *vm;
+
+  virtual void push_root_objects(vm_allocator_s *allocator) override
+  {
+    if (vm->last_step_result) {
+      allocator->gc_push_root(vm->last_step_result);
     }
 
-    update_cell(result, save_arg2);
+    for (auto &frame: vm->frames) {
+      auto last_unwind_root = frame.last_unwind_root;
+      if (last_unwind_root) {
+        allocator->gc_push_root(last_unwind_root);
+      }
+      for (u32 i = 0; i != frame.stack.size; ++i) {
+        allocator->gc_push_root(frame.stack.base[i]);
+      }
+    }
   }
-  DEFAULT {
-    fmt::print(stderr, "Unknown builtin instruction [{}, {}]\n", name, arity);
-    throw std::runtime_error("Unknown builtin");
-  }
+};
 
-  return result;
+vm_session_s *vm_create_session( program_s               *program
+                               , tag_pool_s              *tag_pool
+                               , vm_eval_options_s const &options)
+{
+  auto vm = new vm_session_s;
+
+  auto root_objs = new vm_stack_objects_s;
+  root_objs->vm = vm;
+
+  vm->opts      = options;
+  vm->tag_pool  = tag_pool;
+  vm->program   = program;
+  vm->allocator = new vm_allocator_s( options.heap_buffer
+                                    , options.heap_size
+                                    , root_objs);
+  vm->tags      = initial_tags(tag_pool);
+
+  return vm;
+}
+
+vm_statistics_s  vm_get_statistics(vm_session_s *vm)
+{
+  return vm->stat;
+}
+
+cell_ref_t vm_eval_program(vm_session_s *vm)
+{
+  exec_vm(vm);
+
+  vm->stat.gc_cycles         = vm->allocator->gc_cycles();
+  vm->stat.gc_collected_objs = vm->allocator->gc_collected_objects();
+
+  return vm->last_step_result;
+}
+
+void vm_close_session(vm_session_s *vm)
+{
+  delete vm->allocator;
+  delete vm;
 }
 
 } // namespace gi

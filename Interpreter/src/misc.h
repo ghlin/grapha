@@ -16,4 +16,5 @@
     throw std::runtime_error("Assertion failed");  \
   } } while (false)
 
-#define gi_log(expr...) fmt::print(stderr, expr)
+#define gi_log(expr...)  fmt::print(stderr, expr)
+#define gi_dump_exp(exp) gi_log("{} ::\t" #exp "\t=>\t{}\n", __func__, exp)

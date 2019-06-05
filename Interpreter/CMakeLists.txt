@@ -6,16 +6,18 @@ SET(CMAKE_CXX_STANDARD 17)
 SET(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 SET(GI_SRC
+  src/cell.cc
+  src/load.cc
+  src/instruction.cc
+  src/vm.cc
+  src/allocator.cc
   src/main.cc
-  src/sc.cc
-  src/parse.cc
-  src/node.cc
-  src/ginstr.cc
-  src/vm.cc)
+  )
 
 ADD_EXECUTABLE(gi ${GI_SRC})
 
-FIND_LIBRARY(fmt REQUIRED)
+FIND_LIBRARY(fmt     REQUIRED)
+FIND_LIBRARY(cxxopts REQUIRED)
 
 TARGET_LINK_LIBRARIES(gi fmt)
 
