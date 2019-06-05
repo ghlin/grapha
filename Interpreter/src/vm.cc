@@ -128,12 +128,21 @@ cell_ref_t unwind_stack(vm_stack_s *s, cell_ref_t spine)
   return spine;
 }
 
+struct unsolved_cell_s
+{
+  cell_ref_t root;
+  cell_ref_t spine;
+};
+
 struct vm_frame_s
 {
-  u32           pc;
-  proc_s const *proc;
-  vm_stack_s    stack;
-  cell_ref_t    last_unwind_root = nullptr;
+  u32                          depth;
+  u32                          pc;
+  proc_s const                *proc;
+  vm_stack_s                   stack;
+
+  std::vector<unsolved_cell_s> unwind_cells;
+  std::vector<unsolved_cell_s> eval_cells;
 };
 
 struct vm_tags_s
@@ -415,22 +424,20 @@ static instr_handler_t handlers[] = { nullptr /* IT_UNUSED */
                                     , nullptr /* IT_GLOBAL_END   */
                                     };
 
-/** true for whnf, false for unwond */
-bool prepare_frame( cell_ref_t  root
+auto prepare_frame( cell_ref_t  root
                   , vm_frame_s *this_frame
                   , vm_frame_s *next_frame)
 {
-  next_frame->last_unwind_root = root;
   auto spine = find_redux(root);
-  if (!spine) return true;
+  if (!spine) return spine;
 
-  next_frame->stack = this_frame->stack.fork();
+  next_frame->stack = this_frame->stack;
   next_frame->pc    = 0;
 
   auto proc_cell   = unwind_stack(&next_frame->stack, spine);
   next_frame->proc = proc_cell->d.proc;
 
-  return false;
+  return spine;
 }
 
 /**
@@ -449,7 +456,8 @@ bool exec_frame( vm_session_s *vm
 
     if (vm->opts.dump_instr) {
       this_frame->stack.dump();
-      gi_log( "proc = {}, pc = {}/{}, instr = {}\n\n"
+      gi_log( "[{}] proc = {}, pc = {}/{}, instr = {}\n\n"
+            , this_frame->depth
             , this_frame->proc->name
             , this_frame->pc
             , this_frame->proc->instrs.size()
@@ -457,20 +465,37 @@ bool exec_frame( vm_session_s *vm
     }
 
     if (t == IT_EVAL) {
-      if (prepare_frame(this_frame->stack.top(), this_frame, next_frame)) {
-        this_frame->pc++;
-      } else {
+      auto root = this_frame->stack.top();
+
+      if (auto spine = prepare_frame(this_frame->stack.top(), this_frame, next_frame)) {
+        this_frame->eval_cells.push_back({ root, spine });
         return false;
+      } else {
+        if (!this_frame->eval_cells.empty()) {
+          auto [last_root, last_spine] = this_frame->eval_cells.back();
+          this_frame->eval_cells.pop_back();
+          this_frame->stack.pop();
+          this_frame->stack.push(last_root);
+          vm->allocator->overwrite_cell(last_spine, root);
+        } else {
+          this_frame->pc++;
+        }
       }
     } else if (t == IT_UNWIND) {
-      auto last_unwind_root = this_frame->last_unwind_root ?: this_frame->stack.top();
+      auto root = this_frame->stack.pop();
 
-      if (prepare_frame(last_unwind_root, this_frame, this_frame)) {
-        this_frame->pc++;
-        gi_assert(this_frame->stack.size != 0);
+      if (auto spine = prepare_frame(root, this_frame, this_frame)) {
+        this_frame->unwind_cells.push_back({ root, spine });
+      } else {
+        if (!this_frame->unwind_cells.empty()) {
+          auto [last_root, last_spine] = this_frame->unwind_cells.back();
+          this_frame->unwind_cells.pop_back();
+          this_frame->stack.push(last_root);
+          vm->allocator->overwrite_cell(last_spine, root);
+        } else {
+          this_frame->pc++;
+        }
       }
-
-      vm->allocator->overwrite_cell(last_unwind_root, this_frame->stack.top());
     } else {
       auto handle = handlers[static_cast<u32>(t)];
       gi_assert(handle);
@@ -480,8 +505,6 @@ bool exec_frame( vm_session_s *vm
     }
   }
 
-  gi_assert(this_frame->stack.size == 1);
-
   return true;
 }
 
@@ -489,7 +512,7 @@ vm_frame_s initial_frame(vm_session_s *vm, cell_ref_t *runtime_stack_memory)
 {
   auto proc = vm->lookup_proc(vm->program->entry_proc_name);
   runtime_stack_memory[0] = vm->allocator->acquire(CT_HOLE);
-  return { 0, proc, { runtime_stack_memory, 1 } };
+  return { 0, 0, proc, { runtime_stack_memory, 1 } };
 }
 
 cell_ref_t step_vm(vm_session_s *vm)
@@ -504,6 +527,7 @@ cell_ref_t step_vm(vm_session_s *vm)
     }
     return result;
   } else {
+    next_frame.depth = vm->frames.size();
     vm->frames.push_back(next_frame);
     return nullptr;
   }
@@ -532,9 +556,13 @@ struct vm_stack_objects_s: vm_root_objects_s
     }
 
     for (auto &frame: vm->frames) {
-      auto last_unwind_root = frame.last_unwind_root;
-      if (last_unwind_root) {
-        allocator->gc_push_root(last_unwind_root);
+      for (auto [root, spine]: frame.eval_cells) {
+        allocator->gc_push_root(root);
+        allocator->gc_push_root(spine);
+      }
+      for (auto [root, spine]: frame.unwind_cells) {
+        allocator->gc_push_root(root);
+        allocator->gc_push_root(spine);
       }
       for (u32 i = 0; i != frame.stack.size; ++i) {
         allocator->gc_push_root(frame.stack.base[i]);
