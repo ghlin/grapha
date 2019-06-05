@@ -141,7 +141,8 @@ put-ints (x::xs) = seq (seq (put-int x) (put-char ',')) (put-ints xs)
 get-line = let ch = get-char
            in case ch of
                 '\n' -> []
-                ch   -> ch::get-line
+                ch   -> let rest =  get-line
+                        in  rest @> ch::rest
 
 a @> b = seq a b
 
