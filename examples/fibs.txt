@@ -1,0 +1,5 @@
+main = put-ints   (take n fibs) @>
+       put-chars  "\n"          @>
+       0
+    where n    = put-chars "FIBS? " @> get-int
+          fibs = zip-with (+) (1::0::fibs) (0::fibs)
