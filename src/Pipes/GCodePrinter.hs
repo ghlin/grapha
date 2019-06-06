@@ -9,13 +9,13 @@ printGCode :: [GInstr] -> [String]
 printGCode = mconcat . fmap pp'
 
 singleS :: String -> String -> String
-singleS = printf "%-13s%s"
+singleS = printf "%-13s %s"
 
 singleI :: String -> Int -> String
-singleI = printf "%-13s%d"
+singleI = printf "%-13s %d"
 
 dual :: String -> String -> Int -> String
-dual = printf "%-13s%-20s%d"
+dual = printf "%-13s %-20s %d"
 
 pp' :: GInstr -> [String]
 pp' p@GGlobalStart{} = ["", pp p]
