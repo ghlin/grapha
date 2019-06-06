@@ -1,0 +1,21 @@
+foo 0 []      = "case-1"
+foo n [x, y]  = "case-2"
+foo 0 (x::ys) = "case-3"
+foo 2 []      = "case-4"
+foo x x       = "case-5"
+
+test-pattern-matching n xs = put-chars (foo n xs) @>
+                             put-chars ": "       @>
+                             put-int   n          @>
+                             put-chars "  "       @>
+                             put-ints  xs         @>
+                             put-chars "\n"
+
+main = test-pattern-matching 0 []           @>
+       test-pattern-matching 0 [1]          @>
+       test-pattern-matching 0 [1, 2]       @>
+       test-pattern-matching 3 [1]          @>
+       test-pattern-matching 2 [1]          @>
+       test-pattern-matching 2 []           @>
+       test-pattern-matching 2 [1, 2, 3]    @>
+       0

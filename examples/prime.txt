@@ -1,0 +1,7 @@
+
+primes = filter-primes (enum-from 2)
+  where
+    filter-primes (p::ns) = p :: filter-primes (filter (pred p) ns)
+    pred p n = n % p != 0
+
+main = put-ints (take 10 primes) @> 0
