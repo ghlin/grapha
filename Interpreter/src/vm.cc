@@ -14,70 +14,70 @@ namespace gi {
 struct vm_stack_s
 {
   cell_ref_t *base;
-  u32         size = 0;
+  u32         next = 0;
 
   cell_ref_t top()
   {
-    gi_assert(size != 0);
-    return base[size - 1];
+    gi_assert(next != 0);
+    return base[next - 1];
   }
 
   cell_ref_t pop()
   {
-    gi_assert(size != 0);
-    return base[--size];
+    gi_assert(next != 0);
+    return base[--next];
   }
 
   void pop(u32 n)
   {
-    gi_assert(size >= n);
-    size -= n;
+    gi_assert(next >= n);
+    next -= n;
   }
 
   void push(cell_ref_t p)
   {
-    base[size++] = p;
+    base[next++] = p;
   }
 
   cell_ref_t r(u32  i)
   {
-    gi_assert(i < size);
-    return base[size - i - 1];
+    gi_assert(i < next);
+    return base[next - i - 1];
   }
 
   cell_ref_t at(u32 i)
   {
-    gi_assert(i < size);
+    gi_assert(i < next);
     return base[i];
   }
 
   void update(u32 i, cell_ref_t new_cell)
   {
-    gi_assert(i < size);
-    base[size - i - 1] = new_cell;
+    gi_assert(i < next);
+    base[next - i - 1] = new_cell;
   }
 
   cell_ref_t *peek(u32 n)
   {
     try {
-      gi_assert(n <= size);
+      gi_assert(n <= next);
     } catch (...) {
-      fmt::print(stderr, "size = {}, n = {}\n", size, n);
+      fmt::print(stderr, "next = {}, n = {}\n", next, n);
       throw;
     }
-    return base + size - n;
+    return base + next - n;
   }
 
   vm_stack_s fork()
   {
-    return vm_stack_s { base + size, 0 };
+    return vm_stack_s { base + next, 0 };
   }
 
   void dump() const
   {
     gi_log("==============[ dump start ]=============\n");
-    gi_log("base = {}, size = {}\n", (void *)base, size);
-    for (u32 i = 0; i != size; ++i) {
+    gi_log("base = {}, next = {}\n", (void *)base, next);
+    for (u32 i = 0; i != next; ++i) {
       gi_log("{}\n", pretty_print_tree(fmt::format("{:>2}", i), base[i]));
     }
   }
@@ -148,12 +148,17 @@ struct vm_frame_s
 struct vm_tags_s
 {
   char const *int_eq;
+  char const *int_neq;
   char const *int_lt;
   char const *int_gt;
+  char const *int_lte;
+  char const *int_gte;
   char const *int_pls;
   char const *int_mns;
   char const *int_mul;
   char const *int_div;
+  char const *int_mod;
+  char const *int_neg;
   char const *put_char;
   char const *get_char;
   char const *put_int;
@@ -172,12 +177,17 @@ vm_tags_s initial_tags(tag_pool_s *tag_pool)
   vm_tags_s tags;
 
   tags.int_eq    = tag_pool->assign("==");
+  tags.int_neq   = tag_pool->assign("!=");
   tags.int_lt    = tag_pool->assign("<");
   tags.int_gt    = tag_pool->assign(">");
+  tags.int_lte   = tag_pool->assign("<=");
+  tags.int_gte   = tag_pool->assign(">=");
   tags.int_pls   = tag_pool->assign("+");
   tags.int_mns   = tag_pool->assign("-");
   tags.int_mul   = tag_pool->assign("*");
   tags.int_div   = tag_pool->assign("/");
+  tags.int_mod   = tag_pool->assign("%");
+  tags.int_neg   = tag_pool->assign("neg");
   tags.put_char  = tag_pool->assign("put-char");
   tags.get_char  = tag_pool->assign("get-char");
   tags.put_int   = tag_pool->assign("put-int");
@@ -193,16 +203,25 @@ vm_tags_s initial_tags(tag_pool_s *tag_pool)
   return tags;
 }
 
+struct vm_session_root_objects_s: vm_root_objects_s
+{
+  vm_session_s *vm;
+
+  virtual void push_root_objects(vm_allocator_s *allocator) override;
+};
+
+
 struct vm_session_s
 {
-  program_s               *program;
-  tag_pool_s              *tag_pool;
-  vm_allocator_s          *allocator;
-  std::vector<vm_frame_s>  frames;
-  cell_ref_t               last_step_result = nullptr;
-  vm_tags_s                tags;
-  vm_statistics_s          stat;
-  vm_eval_options_s        opts;
+  program_s                     *program;
+  tag_pool_s                    *tag_pool;
+  vm_allocator_s                *allocator;
+  std::vector<vm_frame_s>        frames;
+  cell_ref_t                     last_step_result = nullptr;
+  vm_tags_s                      tags;
+  vm_statistics_s                stat;
+  vm_eval_options_s              opts;
+  vm_session_root_objects_s     *root_objs;
 
   proc_s const *lookup_proc(char const *name) const
   {
@@ -215,13 +234,34 @@ struct vm_session_s
   }
 };
 
-#define maybe_unused __attribute__((unused))
+void vm_session_root_objects_s::push_root_objects(vm_allocator_s *allocator)
+{
+  if (vm->last_step_result) {
+    allocator->gc_push_root(vm->last_step_result);
+  }
+
+  for (auto &frame: vm->frames) {
+    for (auto [root, spine]: frame.eval_cells) {
+      allocator->gc_push_root(root);
+      allocator->gc_push_root(spine);
+    }
+    for (auto [root, spine]: frame.unwind_cells) {
+      allocator->gc_push_root(root);
+      allocator->gc_push_root(spine);
+    }
+    for (u32 i = 0; i != frame.stack.next; ++i) {
+      allocator->gc_push_root(frame.stack.base[i]);
+    }
+  }
+}
+
+#define maybe_unused              __attribute__((unused))
 #define INSTR_HANDLER_NAME(instr) interp_##instr
-#define HANDLE_INSTR(instr) void INSTR_HANDLER_NAME(instr) ( maybe_unused vm_session_s const       *vm  \
-                                                           , maybe_unused vm_stack_s               *s   \
-                                                           , maybe_unused u32                      *ppc \
-                                                           , maybe_unused instruction_type_t        t   \
-                                                           , maybe_unused instruction_data_s const &d)
+#define HANDLE_INSTR(instr)       void INSTR_HANDLER_NAME(instr) ( maybe_unused vm_session_s const       *vm  \
+                                                                 , maybe_unused vm_stack_s               *s   \
+                                                                 , maybe_unused u32                      *ppc \
+                                                                 , maybe_unused instruction_type_t        t   \
+                                                                 , maybe_unused instruction_data_s const &d)
 
 using instr_handler_t = void (*) ( vm_session_s const       *
                                  , vm_stack_s               *
@@ -313,17 +353,19 @@ HANDLE_INSTR(IT_PACK)
 
 HANDLE_INSTR(IT_TEST)
 {
-  auto pack = s->pop();
+  auto pack   = s->pop();
+
   gi_assert(pack->t == CT_PACK);
-  auto result = vm->allocator->acquire_pack( pack->d.tag == d.tag ? vm->tags.tru : vm->tags.fls
-                                           , 0);
+
+  auto tag    = pack->d.tag == d.tag ? vm->tags.tru : vm->tags.fls;
+  auto result = vm->allocator->acquire_pack(tag, 0);
 
   s->push(result);
 }
 
 HANDLE_INSTR(IT_PICK)
 {
-  auto pack  = s->pop();
+  auto pack = s->pop();
 
   gi_assert(pack->t == CT_PACK);
   gi_assert(pack->d.pack != nullptr);
@@ -347,6 +389,10 @@ HANDLE_INSTR(IT_BUILTIN)
     result->t      = CT_PACK;
     result->d.tag  = (argval(1) == argval(2)) ? vm->tags.tru : vm->tags.fls;
     result->d.pack = nullptr;
+  } else if (MATCH(int_neq)) {
+    result->t      = CT_PACK;
+    result->d.tag  = (argval(1) != argval(2)) ? vm->tags.tru : vm->tags.fls;
+    result->d.pack = nullptr;
   } else if (MATCH(int_lt)) {
     result->t      = CT_PACK;
     result->d.tag  = (argval(1) < argval(2)) ? vm->tags.tru : vm->tags.fls;
@@ -354,6 +400,14 @@ HANDLE_INSTR(IT_BUILTIN)
   } else if (MATCH(int_gt)) {
     result->t      = CT_PACK;
     result->d.tag  = (argval(1) > argval(2)) ? vm->tags.tru : vm->tags.fls;
+    result->d.pack = nullptr;
+  } else if (MATCH(int_lte)) {
+    result->t      = CT_PACK;
+    result->d.tag  = (argval(1) <= argval(2)) ? vm->tags.tru : vm->tags.fls;
+    result->d.pack = nullptr;
+  } else if (MATCH(int_gte)) {
+    result->t      = CT_PACK;
+    result->d.tag  = (argval(1) >= argval(2)) ? vm->tags.tru : vm->tags.fls;
     result->d.pack = nullptr;
   } else if (MATCH(int_mns)) {
     result->t      = CT_PRIM;
@@ -367,6 +421,12 @@ HANDLE_INSTR(IT_BUILTIN)
   } else if (MATCH(int_div)) {
     result->t      = CT_PRIM;
     result->d.val  = argval(1) / argval(2);
+  } else if (MATCH(int_mod)) {
+    result->t      = CT_PRIM;
+    result->d.val  = argval(1) % argval(2);
+  } else if (MATCH(int_neg)) {
+    result->t      = CT_PRIM;
+    result->d.val  = -argval(1);
   } else if (MATCH(get_char)) {
     result->t      = CT_PRIM;
     result->d.val  = std::getchar();
@@ -545,48 +605,21 @@ void exec_vm(vm_session_s *vm)
   }
 }
 
-struct vm_stack_objects_s: vm_root_objects_s
-{
-  vm_session_s *vm;
-
-  virtual void push_root_objects(vm_allocator_s *allocator) override
-  {
-    if (vm->last_step_result) {
-      allocator->gc_push_root(vm->last_step_result);
-    }
-
-    for (auto &frame: vm->frames) {
-      for (auto [root, spine]: frame.eval_cells) {
-        allocator->gc_push_root(root);
-        allocator->gc_push_root(spine);
-      }
-      for (auto [root, spine]: frame.unwind_cells) {
-        allocator->gc_push_root(root);
-        allocator->gc_push_root(spine);
-      }
-      for (u32 i = 0; i != frame.stack.size; ++i) {
-        allocator->gc_push_root(frame.stack.base[i]);
-      }
-    }
-  }
-};
-
 vm_session_s *vm_create_session( program_s               *program
                                , tag_pool_s              *tag_pool
                                , vm_eval_options_s const &options)
 {
   auto vm = new vm_session_s;
 
-  auto root_objs = new vm_stack_objects_s;
-  root_objs->vm = vm;
-
-  vm->opts      = options;
-  vm->tag_pool  = tag_pool;
-  vm->program   = program;
-  vm->allocator = new vm_allocator_s( options.heap_buffer
+  vm->opts          = options;
+  vm->tag_pool      = tag_pool;
+  vm->program       = program;
+  vm->tags          = initial_tags(tag_pool);
+  vm->root_objs     = new vm_session_root_objects_s;
+  vm->root_objs->vm = vm;
+  vm->allocator     = new vm_allocator_s( options.heap_buffer
                                     , options.heap_size
-                                    , root_objs);
-  vm->tags      = initial_tags(tag_pool);
+                                    , vm->root_objs);
 
   return vm;
 }
@@ -609,6 +642,7 @@ cell_ref_t vm_eval_program(vm_session_s *vm)
 void vm_close_session(vm_session_s *vm)
 {
   delete vm->allocator;
+  delete vm->root_objs;
   delete vm;
 }
 

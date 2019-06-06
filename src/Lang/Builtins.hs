@@ -27,6 +27,8 @@ builtinCombinatorSignatures =
   , ("-",         2, tInt `fn` (tInt `fn` tInt),  allStrict)
   , ("*",         2, tInt `fn` (tInt `fn` tInt),  allStrict)
   , ("/",         2, tInt `fn` (tInt `fn` tInt),  allStrict)
+  , ("%",         2, tInt `fn` (tInt `fn` tInt),  allStrict)
+  , ("neg",       1, tInt,                        allStrict)
   , ("from-io",   1, a,                           allStrict)
   , ("get-char",  0, tChar,                       [])
   , ("get-int",   0, tInt,                        [])
