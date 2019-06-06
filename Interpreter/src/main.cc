@@ -85,6 +85,14 @@ int main(int argc, char **argv)
   ev_opts.stack_size   = stack_size;
   ev_opts.heap_size    = heap_size;
 
+  if (popts.report_stat) {
+    fmt::print("=========================================\n");
+    fmt::print("Running program: {}\n", popts.input_file);
+    fmt::print("Stack size {:>20} bytes, {:>19} cells\n", popts.stack_size, ev_opts.stack_size);
+    fmt::print("Heap  size {:>20} bytes, {:>19} cells\n", popts.heap_size, ev_opts.heap_size);
+    fmt::print("=========================================\n");
+  }
+
   gi::tag_pool_s pool;
 
   auto raw_instrs = load_from_stream(input_file, &pool);
@@ -96,10 +104,11 @@ int main(int argc, char **argv)
     auto stat = gi::vm_get_statistics(vm);
 
     fmt::print("\n=========== STAT ==============\n");
-    fmt::print("{}\n", gi::pretty_print_tree("vm_eval_program =", cell));
-    fmt::print("steps             = {}\n", stat.steps);
-    fmt::print("gc cycles         = {}\n", stat.gc_cycles);
-    fmt::print("gc collected objs = {}\n", stat.gc_collected_objs);
+    fmt::print("{}\n", gi::pretty_print_tree("result    =", cell));
+    fmt::print("Steps     = {}\n", stat.steps);
+    fmt::print("GC cycles = {}\n", stat.gc_cycles);
+    fmt::print("GC objs   = {}\n", stat.gc_collected_objs);
+    fmt::print("===============================\n");
   }
 
   gi::vm_close_session(vm);

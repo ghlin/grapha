@@ -1,0 +1,13 @@
+
+guess n acc = if ans == n
+    then put-chars "Yes!\n" @> ()
+    else report-guess ans   @> next-guess
+  where
+    prompt-guess   = put-chars "[" @> put-int acc @> put-chars "] Guess? "
+    ans            = prompt-guess  @> get-int
+    report-guess a = put-chars $ if a > n then ">\n" else "<\n"
+    next-guess     = report-guess  @> guess n (acc + 1)
+
+main = let target = random % 100
+       in  target @> guess target 1 @> 0
+
