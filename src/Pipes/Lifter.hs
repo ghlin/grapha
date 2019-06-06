@@ -111,10 +111,10 @@ liftE s (ELet [CoreCombinator f [] e] body) = do let s' = f:s
                                                     then return (SCLetRec [(f, e')] b', frs)
                                                     else return (SCLet f e' b', frs)
 liftE s (ELet [CoreCombinator f ps e] body) = liftE s $ ELet [CoreCombinator f [] $ ELam ps e] body
-liftE s (ELet bs body) = do let ps = combinatorToPair <$> bs
-                            let fns  = fst <$> ps  -- binding左侧名字
-                            let s' = s `union` fns
-                            rps  <- forM ps $ \(fn, fe) -> liftE (fn:s) fe
+liftE s (ELet bs body) = do let ps  = combinatorToPair <$> bs
+                            let fns = fst <$> ps  -- binding左侧名字
+                            let s'  = s `union` fns
+                            rps  <- forM ps $ \(fn, fe) -> liftE s fe
                             let rhss = fst <$> rps -- binding右侧表达式
                             let fvss = snd <$> rps -- 自由变量
                             (body', fvbs) <- liftE s' body
