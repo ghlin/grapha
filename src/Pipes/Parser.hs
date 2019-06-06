@@ -275,8 +275,16 @@ combinatorNameC = parens identO <|> identV
 combinatorDef :: P CombinatorDef
 combinatorDef = do
   (name, args) <- combinatorLHS
-  body <- lexemeN equalsign *> expr
-  return $ CombinatorDef name args body
+  body  <- lexemeN equalsign *> expr
+  body' <- probeWhere body
+  return $ CombinatorDef name args body'
+
+probeWhere :: Expression -> P Expression
+probeWhere e = fallback' e $ do
+  lexemeN $ return ()
+  symbol "where"
+  bindings <- someAligned letBindingB
+  return $ ELet bindings e
 
 -- | data type
 dataTypeDef :: P DataTypeDef
