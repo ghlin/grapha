@@ -5,6 +5,7 @@
 #include "instruction.h"
 #include "load.h"
 #include "misc.h"
+#include <ctime>
 
 namespace gi {
 
@@ -159,6 +160,7 @@ struct vm_tags_s
   char const *int_div;
   char const *int_mod;
   char const *int_neg;
+  char const *rand;
   char const *put_char;
   char const *get_char;
   char const *put_int;
@@ -188,6 +190,7 @@ vm_tags_s initial_tags(tag_pool_s *tag_pool)
   tags.int_div   = tag_pool->assign("/");
   tags.int_mod   = tag_pool->assign("%");
   tags.int_neg   = tag_pool->assign("neg");
+  tags.rand      = tag_pool->assign("random");
   tags.put_char  = tag_pool->assign("put-char");
   tags.get_char  = tag_pool->assign("get-char");
   tags.put_int   = tag_pool->assign("put-int");
@@ -379,52 +382,91 @@ HANDLE_INSTR(IT_BUILTIN)
   auto args = s->peek(d.arity);
   s->pop(d.arity);
 
-#define MATCH(x)  (d.tag == vm->tags.x)
-#define arg(n)    (args[d.arity - n])
-#define argval(n) (arg(n)->d.val)
+#define MATCH(x)      (d.tag == vm->tags.x)
+#define arg(n)        (args[d.arity - n])
+#define argval(n)     (arg(n)->d.val)
+#define check_int(n)  gi_assert(arg(n)->t == CT_PRIM)
 
   auto result = vm->allocator->acquire(CT_HOLE);
 
   if (MATCH(int_eq)) {
+    check_int(1);
+    check_int(2);
+
     result->t      = CT_PACK;
     result->d.tag  = (argval(1) == argval(2)) ? vm->tags.tru : vm->tags.fls;
     result->d.pack = nullptr;
   } else if (MATCH(int_neq)) {
+    check_int(1);
+    check_int(2);
+
     result->t      = CT_PACK;
     result->d.tag  = (argval(1) != argval(2)) ? vm->tags.tru : vm->tags.fls;
     result->d.pack = nullptr;
   } else if (MATCH(int_lt)) {
+    check_int(1);
+    check_int(2);
+
     result->t      = CT_PACK;
     result->d.tag  = (argval(1) < argval(2)) ? vm->tags.tru : vm->tags.fls;
     result->d.pack = nullptr;
   } else if (MATCH(int_gt)) {
+    check_int(1);
+    check_int(2);
+
     result->t      = CT_PACK;
     result->d.tag  = (argval(1) > argval(2)) ? vm->tags.tru : vm->tags.fls;
     result->d.pack = nullptr;
   } else if (MATCH(int_lte)) {
+    check_int(1);
+    check_int(2);
+
     result->t      = CT_PACK;
     result->d.tag  = (argval(1) <= argval(2)) ? vm->tags.tru : vm->tags.fls;
     result->d.pack = nullptr;
   } else if (MATCH(int_gte)) {
+    check_int(1);
+    check_int(2);
+
     result->t      = CT_PACK;
     result->d.tag  = (argval(1) >= argval(2)) ? vm->tags.tru : vm->tags.fls;
     result->d.pack = nullptr;
   } else if (MATCH(int_mns)) {
+    check_int(1);
+    check_int(2);
+
     result->t      = CT_PRIM;
     result->d.val  = argval(1) - argval(2);
   } else if (MATCH(int_pls)) {
+    check_int(1);
+    check_int(2);
+
     result->t      = CT_PRIM;
     result->d.val  = argval(1) + argval(2);
   } else if (MATCH(int_mul)) {
+    check_int(1);
+    check_int(2);
+
     result->t      = CT_PRIM;
     result->d.val  = argval(1) * argval(2);
   } else if (MATCH(int_div)) {
+    check_int(1);
+    check_int(2);
+
     result->t      = CT_PRIM;
     result->d.val  = argval(1) / argval(2);
   } else if (MATCH(int_mod)) {
+    check_int(1);
+    check_int(2);
+
     result->t      = CT_PRIM;
     result->d.val  = argval(1) % argval(2);
+  } else if (MATCH(rand)) {
+    result->t      = CT_PRIM;
+    result->d.val  = std::rand();
   } else if (MATCH(int_neg)) {
+    check_int(1);
+
     result->t      = CT_PRIM;
     result->d.val  = -argval(1);
   } else if (MATCH(get_char)) {
@@ -572,7 +614,7 @@ vm_frame_s initial_frame(vm_session_s *vm, cell_ref_t *runtime_stack_memory)
 {
   auto proc = vm->lookup_proc(vm->program->entry_proc_name);
   runtime_stack_memory[0] = vm->allocator->acquire(CT_HOLE);
-  return { 0, 0, proc, { runtime_stack_memory, 1 } };
+  return { 0, 0, proc, { runtime_stack_memory, 1 }, {}, {} };
 }
 
 cell_ref_t step_vm(vm_session_s *vm)
@@ -620,6 +662,9 @@ vm_session_s *vm_create_session( program_s               *program
   vm->allocator     = new vm_allocator_s( options.heap_buffer
                                     , options.heap_size
                                     , vm->root_objs);
+
+  // TODO: use random_device
+  std::srand(std::time(nullptr));
 
   return vm;
 }
