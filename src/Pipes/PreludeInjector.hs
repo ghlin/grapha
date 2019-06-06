@@ -56,6 +56,13 @@ const x y = x
 
 compose f g = λx -> f (g x)
 
+infixl 3 ==
+infixl 3 !=
+
+infixl 4 *
+infixl 4 /
+infixl 4 %
+
 infixl 5 .
 x . y = compose x y
 
@@ -145,5 +152,7 @@ get-line = let ch = get-char
                         in  rest @> ch::rest
 
 a @> b = seq a b
+
+f .  g = \x -> f (g x)
 
 |]
