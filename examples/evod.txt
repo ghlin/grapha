@@ -4,5 +4,9 @@ display-ev-od n = put-chars $ if ev n then "Even\n" else "Odd\n"
         od 0 = False
         od n = ev    $ n - 1
 
-main = let n = put-chars "? " @> get-int
-       in display-ev-od n @> main @> ()
+main = io
+  n <- put-chars "? " @> get-int
+  if n == 0
+    then 0
+    else display-ev-od n @> main @> 0
+

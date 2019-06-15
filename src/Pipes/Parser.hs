@@ -146,7 +146,7 @@ termP' = litP <|> varP <|> conP' <|> wildcardP <|> listP <|> try tupleP <|> pare
 
 -- | expression parser
 expr :: P Expression
-expr = ifE <|> letE <|> caseE <|> lamE <|> expr'
+expr = (try (lookAhead $ symbol "if") *> ifE) <|> ioE <|> letE <|> caseE <|> lamE <|> expr'
 
 litE :: P Expression
 litE = ELit <$> literal
@@ -168,6 +168,23 @@ ifE = do
           c <- indented ref $ symbol "then" *> expr <* scn
           e <- indented ref $ symbol "else" *> expr
           return (c, e)
+
+ioE :: P Expression
+ioE = wrapSeq <$> (symbol "io" *> someAligned ioStmt)
+  where ioStmt     = try bindStmt <|> execStmt
+        execStmt   = (Nothing, ) <$> expr
+        bindStmt   = do pat  <- pattern_
+                        arrowL
+                        body <- expr
+                        return $ (Just pat, body)
+        makeSeq  got = EApp (EApp (EVar "seq") got)
+        wrapSeq []                    = error "io: empty block"
+        wrapSeq ((Just pat, body):es) = ELet [LetBinding (PatternBinding pat) body] (wrapSeq es)
+        wrapSeq ((Nothing, e):es)     = wrapSeq' e es
+        wrapSeq' got []                    = got
+        wrapSeq' got ((Nothing, e):rs)     = wrapSeq' (makeSeq got e) rs
+        wrapSeq' got ((Just pat, body):rs) = makeSeq got bind
+          where bind = ELet [LetBinding (PatternBinding pat) body] (wrapSeq rs)
 
 caseE :: P Expression
 caseE = do
@@ -348,6 +365,7 @@ rwsV :: [String]
 rwsV = [ "let"
        , "in"
        , "if"
+       , "io"
        , "then"
        , "else"
        , "case"
