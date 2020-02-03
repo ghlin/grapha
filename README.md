@@ -1,6 +1,6 @@
 # Grapha
 
-A functional programming language, follow the book "The implementation of functional programming language" and "Functional programming language: a tutorial".
+A functional programming language, follow the book _The implementation of functional programming language_ and _Functional programming language: a tutorial_.
 
 # How to build
 
@@ -13,7 +13,7 @@ install `cxxopts` & `libfmt`.
 ## build the compiler
 
 ``` bash
-cd <grapha-root-dir>
+cd <project-root>
 stack install
 
 # try it
@@ -26,7 +26,7 @@ grc -h
 cd <anywhere-u-like>
 mkdir build
 cd    build
-cmake <grapha-root-dir>/Interpreter  -DCMAKE_INSTALL_PREFIX=~/.local
+cmake <project-root>/Interpreter  -DCMAKE_INSTALL_PREFIX=~/.local
 make
 make install
 
@@ -35,7 +35,6 @@ gi
 ```
 
 # The compiler
-
 
 ```
 grc - Grapha compiler
@@ -71,7 +70,7 @@ Usage:
 # run demos
 
 ``` bash
-cd <grapha-root-dir>/examples
+cd <project-root>/examples
 
 ./compile-and-run.sh    <example>.txt
 ```
