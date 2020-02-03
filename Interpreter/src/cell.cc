@@ -93,7 +93,7 @@ std::vector<std::string>
 do_pretty_print_tree(cell_s *root, std::set<u32> &visited)
 {
   if (visited.find(root->id) != visited.end()) {
-    return { fmt::format("[#{:>05}] (∞)", root->id) };
+    return { fmt::format("[#{:>05}] (∞)", unsigned(root->id)) };
   }
   visited.insert(root->id);
 
@@ -106,10 +106,10 @@ do_pretty_print_tree(cell_s *root, std::set<u32> &visited)
   }
 
   if (is_app || root->t == CT_PACK) {
-    auto fields = is_app ? app_fields : root->d.pack ? root->d.pack->fields : nullptr;
-    auto arity  = is_app ? 2 : root->d.pack ? root->d.pack->arity : 0;
-    auto label  = is_app ? "@" : fmt::format("pack({})", root->d.tag);
-    auto leading = fmt::format("[#{:>05}] {}", root->id, label);
+    auto fields  = is_app ? app_fields : root->d.pack ? root->d.pack->fields : nullptr;
+    auto arity   = is_app ? 2 : root->d.pack ? root->d.pack->arity : 0;
+    auto label   = is_app ? "@" : fmt::format("pack({})", root->d.tag);
+    auto leading = fmt::format("[#{:>05}] {}", unsigned(root->id), label);
     return make_tree(leading, arity, fields, visited);
   }
 

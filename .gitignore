@@ -1,3 +1,6 @@
 .stack-work/
 Grapha.cabal
 *.sample
+b/
+.ccls-cache
+*.compiled

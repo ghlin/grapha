@@ -66,17 +66,17 @@ int main(int argc, char **argv)
 
   auto input_file = std::ifstream(popts.input_file);
   if (!input_file) {
-    fmt::print(stderr, "file [{}] cannot be opened.\n", popts.input_file);
+    fmt::print(stderr, "Cannot open file {}\n", popts.input_file);
     return 1;
   }
-
-  gi::vm_eval_options_s ev_opts;
 
   auto stack_size   = (popts.stack_size - 1)  / sizeof (gi::cell_s *) + 1;
   auto heap_size    = (popts.heap_size - 1)   / sizeof (gi::cell_s)   + 1;
 
   auto stack_buffer = std::unique_ptr<gi::cell_s *[]>(new gi::cell_s *[stack_size]);
   auto heap_buffer  = std::unique_ptr<gi::cell_s []>(new gi::cell_s  [heap_size]);
+
+  gi::vm_eval_options_s ev_opts;
 
   ev_opts.dump_root    = popts.dump_root;
   ev_opts.dump_instr   = popts.dump_instr;

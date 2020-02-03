@@ -20,7 +20,7 @@ liftCombinators bs ct cs = do let initialState = LState 0 bs ct
                               let (scs, e) = runL (liftAll cs) initialState
                               s <- e
                               case lookup "main" s of
-                                Nothing -> Left "no main combinator found"
+                                Nothing -> Left "missing combinator `main'"
                                 Just n  -> return (fixToplevelNames s <$> scs, n)
 
 liftAll :: [CoreCombinator] -> L [(Name, Name)]

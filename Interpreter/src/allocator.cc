@@ -194,6 +194,10 @@ void               vm_allocator_s::overwrite_cell(cell_ref_t dst, cell_s const *
   }
   if (dst->t == CT_PACK && dst->d.pack && dst->d.pack->ref_count != 0) {
     dst->d.pack->ref_count--;
+
+    if (dst->d.pack->ref_count == 0) {
+      std::free(dst->d.pack);
+    }
   }
   std::memcpy(&dst->d, &src->d, sizeof src->d);
 }

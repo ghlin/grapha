@@ -66,7 +66,7 @@ literal = LString  <$> lexeme H.string
 typing :: P Type
 typing = foldl1 T.fn <$> termT `sepBy1` arrowR
 
--- | like typing, but doesn't probe type application
+-- | typing without type application
 typing' :: P Type
 typing' = foldl1 T.fn <$> termT' `sepBy1` arrowR
 
